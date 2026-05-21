@@ -12,6 +12,10 @@ build/
 # Data (CV files, settings — personal data, not for version control)
 data/
 
+# Local Claude Code config (contains machine-specific paths)
+CLAUDE.md
+.claude/
+
 # Desktop shortcuts
 *.lnk
 
