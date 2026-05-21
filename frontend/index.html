@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>InterviewAI</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style media="print">
+    body { background: #fff !important; color: #000 !important; }
+    header .subtitle, #progress, .btn, .results-actions,
+    .mode-toggle-row, .cv-row { display: none !important; }
+    .app { max-width: 100%; padding: 20px; }
+    header h1 { -webkit-text-fill-color: #000 !important; color: #000 !important; background: none !important; font-size: 1.6rem; }
+    .card { border: none !important; background: #fff !important; padding: 0; }
+
+    /* Mode badge — prominent at top of PDF */
+    .done-mode-badge {
+      display: block !important;
+      background: #333 !important;
+      color: #fff !important;
+      font-size: 0.85rem !important;
+      padding: 6px 16px !important;
+      border-radius: 4px !important;
+      margin-bottom: 10px;
+      width: fit-content;
+    }
+    .done-mode-inline { color: #555 !important; }
+    .done-avg { color: #000 !important; }
+    .done-card h2 { color: #000 !important; }
+
+    .summary-section { border: 1px solid #ccc !important; background: #fff !important; break-inside: avoid; margin-bottom: 20px; }
+    .summary-q-num { background: #333 !important; }
+    .summary-q-text, .summary-transcript p, .summary-feedback p { color: #000 !important; }
+    .transcript-label { color: #555 !important; }
+    .scores-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .score-card { border: 1px solid #ccc !important; background: #f9f9f9 !important; }
+    .score-value { color: #000 !important; font-size: 1.2rem; }
+    .score-label, .score-sub { color: #555 !important; }
+    .score-fill { background: #333 !important; }
+    .score-bar { background: #ddd !important; }
+    .summary-transcript, .summary-feedback { border: 1px solid #ccc !important; background: #f9f9f9 !important; }
+    .formality-badge { border: 1px solid #999 !important; color: #000 !important; }
+    .formality-notes { color: #555 !important; }
+    .star-item { border: 1px solid #999 !important; color: #000 !important; background: #f0f0f0 !important; }
+    .star-item.covered { background: #e0f5e9 !important; }
+    .star-item.missing { background: #fde8e8 !important; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>InterviewAI</h1>
+      <p class="subtitle">Local interview coach — runs entirely on your machine</p>
+    </header>
+    <div id="progress" class="progress hidden"></div>
+    <div id="card-container"></div>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

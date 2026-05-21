@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "interviewai",
+      "runtimeExecutable": "C:\\InterviewAI\\venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"],
+      "cwd": "C:\\InterviewAI\\backend",
+      "port": 8000
+    }
+  ]
+}
