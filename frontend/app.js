@@ -9,6 +9,14 @@ const state = {
   useCv: false,
   cvLoaded: false,
   cvFilename: null,
+  // Simulation fields
+  sessionType: "practice",
+  interviewer: null,
+  jobDescription: "",
+  alwaysShowQuestion: false,
+  questionVisible: false,
+  questionDelivered: true,
+  holisticReview: null,
   recorder: { mediaRecorder: null, stream: null, chunks: [], timerInterval: null, seconds: 0 }
 };
 
@@ -28,23 +36,35 @@ async function requestJson(url, options) {
 // ── Render dispatcher ─────────────────────────────────────────────────────────
 function render() {
   const map = {
-    jd:          renderJdCard,
-    question:    renderQuestionCard,
-    recording:   renderQuestionCard,
-    transcribing:renderQuestionCard,
-    transcript:  renderQuestionCard,
-    analyzing:   renderQuestionCard,
-    results:     renderResultsCard,
-    done:        renderDoneCard
+    jd:                  renderJdCard,
+    question:            renderQuestionCard,
+    recording:           renderQuestionCard,
+    transcribing:        renderQuestionCard,
+    transcript:          renderQuestionCard,
+    analyzing:           renderQuestionCard,
+    sim_analyzing:       renderQuestionCard,
+    results:             renderResultsCard,
+    done:                renderDoneCard,
+    sim_loading:         renderSimLoadingCard,
+    sim_between:         renderSimBetweenCard,
+    sim_review_loading:  renderSimReviewLoadingCard,
+    sim_holistic_review: renderSimHolisticReviewCard
   };
   (map[state.phase] || renderJdCard)();
 
   const progress = document.getElementById("progress");
-  if (["jd", "done"].includes(state.phase)) {
+  const hideProgressPhases = ["jd", "done", "sim_loading", "sim_between", "sim_review_loading", "sim_holistic_review"];
+  if (hideProgressPhases.includes(state.phase)) {
     progress.classList.add("hidden");
   } else {
-    const modeLabel = state.interviewMode === "screening" ? "Screening" : "Technical";
-    progress.textContent = `${modeLabel} — Question ${state.currentIndex + 1} of ${state.questions.length}`;
+    let progressText;
+    if (state.sessionType === "simulation") {
+      progressText = `Simulation — Question ${state.currentIndex + 1} of 8`;
+    } else {
+      const modeLabel = state.interviewMode === "screening" ? "Screening" : "Technical";
+      progressText = `${modeLabel} — Question ${state.currentIndex + 1} of ${state.questions.length}`;
+    }
+    progress.textContent = progressText;
     progress.classList.remove("hidden");
   }
 }
@@ -55,6 +75,7 @@ function renderJdCard() {
   const cvLoaded = state.cvLoaded;
   const useCvDisabled = !cvLoaded ? "disabled" : "";
   const useCvChecked = cvLoaded && state.useCv ? "checked" : "";
+  const alwaysShowChecked = state.alwaysShowQuestion ? "checked" : "";
 
   const cvSection = cvLoaded
     ? `<div class="cv-loaded">
@@ -94,8 +115,18 @@ function renderJdCard() {
         <div class="cv-status" id="cv-status"></div>
       </div>
 
+      <div class="settings-row">
+        <span class="mode-toggle-label">Display</span>
+        <label class="toggle-label">
+          <input type="checkbox" class="toggle-input" data-action="toggleAlwaysShow" ${alwaysShowChecked}>
+          <span class="toggle-track"></span>
+          <span class="toggle-text">Always show question</span>
+        </label>
+      </div>
+
       <div class="card-actions">
         <button class="btn primary" data-action="generate">Generate Questions</button>
+        <button class="btn secondary" data-action="startSimulation">Full Simulation</button>
       </div>
       <div class="status" id="jd-status"></div>
     </div>
@@ -115,28 +146,57 @@ function renderJdCard() {
 // ── Card: Question / Record / Transcribe / Analyse ───────────────────────────
 function renderQuestionCard() {
   const phase = state.phase;
-  const q = state.questions[state.currentIndex];
+  const qObj = state.questions[state.currentIndex] || {};
+  const q = qObj.text || "";
   const answer = state.answers[state.currentIndex] || {};
+  const isSim = state.sessionType === "simulation";
 
   const isRecording = phase === "recording";
-  const isBusy = phase === "transcribing" || phase === "analyzing";
+  const isBusy = phase === "transcribing" || phase === "analyzing" || phase === "sim_analyzing";
   const showTranscript = ["transcript", "analyzing"].includes(phase) && answer.transcript;
-  const showAnalyse = phase === "transcript";
-  const showRetry = phase === "question" || phase === "transcript";
+  const showAnalyse = phase === "transcript" && !isSim;
+  const showRetry = (phase === "question" || phase === "transcript") && !isSim;
   const showTimer = isRecording;
 
   let recordLabel = "Start Recording";
   if (isRecording) recordLabel = "Stop Recording";
-  if (isBusy) recordLabel = `<span class="spinner"></span> ${phase === "transcribing" ? "Transcribing..." : "Analysing..."}`;
+  if (isBusy) {
+    if (phase === "transcribing") recordLabel = `<span class="spinner"></span> Transcribing...`;
+    else if (phase === "sim_analyzing") recordLabel = `<span class="spinner"></span> Processing...`;
+    else recordLabel = `<span class="spinner"></span> Analysing...`;
+  }
 
   let statusText = "";
   if (phase === "transcribing") statusText = "Transcribing with Whisper...";
   if (phase === "analyzing") statusText = "Analysing — this may take 15–30 seconds...";
+  if (phase === "sim_analyzing") statusText = "Interviewer is noting your response...";
   if (answer.error) statusText = answer.error;
+
+  // Build question box HTML
+  let questionBoxHtml;
+  if (isSim) {
+    const hidden = !state.alwaysShowQuestion && !state.questionVisible;
+    const framingHtml = qObj.framing ? `<div class="sim-framing">${escHtml(qObj.framing)}</div>` : "";
+    const eyeBtnHtml = !state.alwaysShowQuestion
+      ? `<div class="eye-btn-row">
+          <button class="eye-btn" id="eye-btn" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            Hold to reveal
+          </button>
+        </div>`
+      : "";
+    questionBoxHtml = `
+      ${framingHtml}
+      <div class="question-box${hidden ? " question-hidden" : ""}">${escHtml(q)}</div>
+      ${eyeBtnHtml}
+    `;
+  } else {
+    questionBoxHtml = `<div class="question-box">${escHtml(q)}</div>`;
+  }
 
   setCard(`
     <div class="card">
-      <div class="question-box">${escHtml(q)}</div>
+      ${questionBoxHtml}
       <div class="record-controls">
         <button class="btn record${isRecording ? " recording" : ""}" data-action="record" ${isBusy ? "disabled" : ""}>
           ${recordLabel}
@@ -151,17 +211,30 @@ function renderQuestionCard() {
           <div class="transcript-label">Transcript</div>
           <p class="transcript-text">${escHtml(answer.transcript)}</p>
           ${showAnalyse ? `<button class="btn primary" data-action="analyze">Analyse Response</button>` : ""}
-          ${isBusy ? `<button class="btn primary" disabled><span class="spinner"></span> Analysing...</button>` : ""}
+          ${(isBusy && !isSim) ? `<button class="btn primary" disabled><span class="spinner"></span> Analysing...</button>` : ""}
         </div>
       ` : ""}
       <div class="status">${escHtml(statusText)}</div>
     </div>
   `);
+
+  // Wire up eye button for simulation
+  if (isSim && !state.alwaysShowQuestion) {
+    const eyeBtn = document.getElementById("eye-btn");
+    if (eyeBtn) {
+      const show = () => { state.questionVisible = true; render(); };
+      const hide = () => { state.questionVisible = false; render(); };
+      eyeBtn.addEventListener("pointerdown", show);
+      eyeBtn.addEventListener("pointerup", hide);
+      eyeBtn.addEventListener("pointercancel", hide);
+      eyeBtn.addEventListener("pointerleave", hide);
+    }
+  }
 }
 
 // ── Card: Results ─────────────────────────────────────────────────────────────
 function renderResultsCard() {
-  const q = state.questions[state.currentIndex];
+  const q = (state.questions[state.currentIndex] || {}).text || "";
   const answer = state.answers[state.currentIndex] || {};
   const d = answer.result || {};
   const isLast = state.currentIndex === state.questions.length - 1;
@@ -226,7 +299,8 @@ function renderDoneCard() {
   const isTechnical = state.interviewMode === "technical";
   const modeLabel = isTechnical ? "Technical" : "Screening";
 
-  const sections = state.questions.map((q, i) => {
+  const sections = state.questions.map((qObj, i) => {
+    const q = qObj.text || "";
     const answer = state.answers[i] || {};
     const r = answer.result || {};
     const rawLabel = (r.formality_label || "Neutral").toLowerCase();
@@ -283,8 +357,192 @@ function renderDoneCard() {
     <div class="card done-card">
       <div class="done-mode-badge">${modeLabel} Interview</div>
       <h2>Interview Complete</h2>
-      <p class="done-avg">Average overall score: <strong>${avg}/10</strong> &nbsp;·&nbsp; <span class="done-mode-inline">${modeLabel}</span></p>
+      <p class="done-avg">Average overall score: <strong>${avg}/10</strong> &nbsp;&middot;&nbsp; <span class="done-mode-inline">${modeLabel}</span></p>
       ${sections}
+      <div class="results-actions">
+        <button class="btn secondary" data-action="restart">Start Over</button>
+        <button class="btn primary" data-action="download">Download PDF</button>
+      </div>
+    </div>
+  `);
+}
+
+// ── Card: Simulation Loading ──────────────────────────────────────────────────
+function renderSimLoadingCard() {
+  setCard(`
+    <div class="card">
+      <h2>Preparing Your Interview</h2>
+      <p class="sim-loading-text">Setting up your personalised simulation...</p>
+      <div class="sim-loading-steps" id="sim-loading-steps">
+        <div class="sim-loading-step active">Analysing the role...</div>
+      </div>
+      <div class="status"><span class="spinner"></span> This usually takes 20–30 seconds</div>
+    </div>
+  `);
+}
+
+// ── Card: Simulation Between Questions ───────────────────────────────────────
+function renderSimBetweenCard() {
+  const interviewer = state.interviewer || {};
+  const justAnswered = state.questions[state.currentIndex];
+  const phase = justAnswered ? justAnswered.phase : "intro";
+  const isNextToLast = state.currentIndex === state.questions.length - 2;
+
+  const acknowledgments = {
+    intro: "Good, thanks for that. Let me ask about your background.",
+    background: "Understood. Let me dig into something more specific.",
+    behavioral: "Thank you. I want to explore your technical experience.",
+    technical: isNextToLast
+      ? "Great. I just have one final question for you."
+      : "Noted. Let me ask you one more thing.",
+    closing: null
+  };
+  const ackText = acknowledgments[phase] !== undefined ? acknowledgments[phase] : "Thank you. Let us continue.";
+  const finalAck = ackText || "Thank you. Let us continue.";
+
+  const isLastQuestion = state.currentIndex === state.questions.length - 1;
+
+  setCard(`
+    <div class="card sim-between-card">
+      <div class="sim-interviewer-tag">${escHtml(interviewer.name || "Interviewer")} &middot; ${escHtml(interviewer.role || "")}</div>
+      <p class="sim-ack-text">${escHtml(finalAck)}</p>
+      <button class="btn primary" data-action="simContinue">${isLastQuestion ? "See Results" : "Continue"}</button>
+    </div>
+  `);
+}
+
+// ── Card: Simulation Review Loading ──────────────────────────────────────────
+function renderSimReviewLoadingCard() {
+  setCard(`
+    <div class="card">
+      <h2>Compiling Your Review</h2>
+      <p class="sim-loading-text">Analysing your performance across all questions...</p>
+      <div class="status"><span class="spinner"></span> This may take 30–45 seconds</div>
+    </div>
+  `);
+}
+
+// ── Card: Simulation Holistic Review ─────────────────────────────────────────
+function renderSimHolisticReviewCard() {
+  const r = state.holisticReview || {};
+
+  if (r.error) {
+    setCard(`
+      <div class="card">
+        <h2>Review Error</h2>
+        <p style="color:var(--danger);margin-bottom:16px">${escHtml(r.error)}</p>
+        <button class="btn secondary" data-action="restart">Start Over</button>
+      </div>
+    `);
+    return;
+  }
+
+  // Hire signal badge class
+  const signalMap = {
+    "Strong Hire": "hire-strong",
+    "Lean Hire": "hire-lean",
+    "Mixed": "hire-mixed",
+    "Lean No-Hire": "hire-lean-no",
+    "No-Hire": "hire-no"
+  };
+  const hireClass = signalMap[r.hire_signal] || "hire-mixed";
+  const avgScore = r.avg_score != null ? r.avg_score : "—";
+
+  // Competency grid
+  const competencyItems = (r.competencies || []).map(c => {
+    const lvl = (c.evidence_level || "missing").toLowerCase().replace(/\s+/g, "-");
+    return `
+      <div class="competency-item">
+        <div class="competency-name">${escHtml(c.name || c.competency || "")}</div>
+        <span class="evidence-badge evidence-${lvl}">${escHtml(c.evidence_level || "Missing")}</span>
+      </div>`;
+  }).join("");
+
+  // Strengths
+  const strengths = (r.strengths || []).slice(0, 3).map(s => {
+    const idxArr = s.question_indices || s.question_refs || [];
+    const refs = Array.isArray(idxArr) ? idxArr.map(i => `Q${i + 1}`).join(", ") : "";
+    return `
+      <div class="sim-finding">
+        <div class="sim-finding-title">${escHtml(s.title || s.strength || "")}</div>
+        <div class="sim-finding-detail">${escHtml(s.detail || s.description || "")}</div>
+        ${refs ? `<div class="sim-finding-refs">${escHtml(refs)}</div>` : ""}
+      </div>`;
+  }).join("");
+
+  // Risks
+  const risks = (r.risks || []).slice(0, 3).map(risk => {
+    const idxArr = risk.question_indices || risk.question_refs || [];
+    const refs = Array.isArray(idxArr) ? idxArr.map(i => `Q${i + 1}`).join(", ") : "";
+    return `
+      <div class="sim-finding">
+        <div class="sim-finding-title">${escHtml(risk.title || risk.risk || "")}</div>
+        <div class="sim-finding-detail">${escHtml(risk.detail || risk.description || "")}</div>
+        ${refs ? `<div class="sim-finding-refs">${escHtml(refs)}</div>` : ""}
+      </div>`;
+  }).join("");
+
+  // Best / worst answer
+  const bestIdx = r.best_answer_idx;
+  const worstIdx = r.worst_answer_idx;
+  const bestQ = (bestIdx != null && state.questions[bestIdx]) ? state.questions[bestIdx].text : "";
+  const worstQ = (worstIdx != null && state.questions[worstIdx]) ? state.questions[worstIdx].text : "";
+
+  setCard(`
+    <div class="card done-card">
+      <div class="done-mode-badge">Simulation Complete</div>
+      <h2>Interview Review</h2>
+
+      <div style="text-align:center;margin-bottom:16px">
+        <span class="hire-badge ${hireClass}">${escHtml(r.hire_signal || "Mixed")}</span>
+        <p class="hire-reasoning" style="font-size:14px;color:var(--muted);margin-top:8px">${escHtml(r.hire_reasoning || "")}</p>
+        <p class="done-avg" style="margin-top:8px">Average score: <strong>${avgScore}/10</strong> across 8 questions</p>
+      </div>
+
+      ${competencyItems ? `
+        <div class="review-section-label">Competencies</div>
+        <div class="competency-grid">${competencyItems}</div>
+      ` : ""}
+
+      ${strengths ? `
+        <div class="review-section-label">Strengths</div>
+        ${strengths}
+      ` : ""}
+
+      ${risks ? `
+        <div class="review-section-label">Risks</div>
+        ${risks}
+      ` : ""}
+
+      ${bestQ ? `
+        <div class="review-section-label">Standout Answers</div>
+        <div class="sim-answer-highlight best">
+          <div class="sim-answer-highlight-label">Strongest answer — Q${(bestIdx + 1)}</div>
+          <div style="font-size:13px;color:var(--muted)">${escHtml(bestQ)}</div>
+        </div>
+      ` : ""}
+
+      ${worstQ ? `
+        <div class="sim-answer-highlight worst">
+          <div class="sim-answer-highlight-label">Needs work — Q${(worstIdx + 1)}</div>
+          <div style="font-size:13px;color:var(--muted)">${escHtml(worstQ)}</div>
+        </div>
+      ` : ""}
+
+      ${r.closing_question_notes ? `
+        <div class="review-section-label">Closing Notes</div>
+        <div class="sim-finding">
+          <div class="sim-finding-detail">${escHtml(r.closing_question_notes)}</div>
+        </div>
+      ` : ""}
+
+      ${r.coaching_focus ? `
+        <div class="coaching-box">
+          <h3>Coaching Focus</h3>
+          <p>${escHtml(r.coaching_focus)}</p>
+        </div>
+      ` : ""}
+
       <div class="results-actions">
         <button class="btn secondary" data-action="restart">Start Over</button>
         <button class="btn primary" data-action="download">Download PDF</button>
@@ -419,10 +677,52 @@ async function stopAndTranscribe() {
     }
     const answers = [...state.answers];
     answers[state.currentIndex] = { ...(answers[state.currentIndex] || {}), transcript, error: null };
-    setState({ phase: "transcript", answers });
+    state.answers = answers;
+
+    if (state.sessionType === "simulation") {
+      await autoAnalyzeSimulation();
+    } else {
+      setState({ phase: "transcript", answers });
+    }
   } catch (e) {
     setState({ phase: "question" });
     setAnswerError("Transcription error: " + e.message);
+  }
+}
+
+// ── Simulation: auto-analyze after transcription ──────────────────────────────
+async function autoAnalyzeSimulation() {
+  const idx = state.currentIndex;
+  const answer = state.answers[idx];
+  const q = state.questions[idx] || {};
+
+  setState({ phase: "sim_analyzing" });
+
+  try {
+    const data = await requestJson(`${API}/analyze-simulation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question_obj: {
+          phase: q.phase,
+          question: q.text,
+          framing: q.framing,
+          competency: q.competency,
+          evaluation_mode: q.evaluationMode
+        },
+        transcript: answer.transcript,
+        interview_mode: state.interviewMode
+      })
+    });
+    if (state.currentIndex !== idx) return;
+    const answers = [...state.answers];
+    answers[idx] = { ...answer, result: data };
+    setState({ answers, phase: "sim_between", questionVisible: false });
+  } catch (e) {
+    if (state.currentIndex !== idx) return;
+    const answers = [...state.answers];
+    answers[idx] = { ...answer, error: "Analysis failed: " + e.message };
+    setState({ phase: "sim_between", answers, questionVisible: false });
   }
 }
 
@@ -444,7 +744,6 @@ async function handleCvUpload(file) {
   const statusEl = document.getElementById("cv-status");
   if (statusEl) statusEl.textContent = "Uploading and summarising CV…";
 
-  // Disable upload button during upload
   const uploadBtn = document.querySelector(".cv-upload-btn");
   if (uploadBtn) uploadBtn.style.opacity = "0.5";
 
@@ -465,9 +764,13 @@ async function saveSettings() {
     await requestJson(`${API}/settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ interview_mode: state.interviewMode, use_cv: state.useCv && state.cvLoaded })
+      body: JSON.stringify({
+        interview_mode: state.interviewMode,
+        use_cv: state.useCv && state.cvLoaded,
+        always_show_question: state.alwaysShowQuestion
+      })
     });
-  } catch (e) { console.error('saveSettings failed:', e); }
+  } catch (e) { console.error("saveSettings failed:", e); }
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
@@ -492,14 +795,97 @@ const actions = {
           use_cv: state.useCv && state.cvLoaded
         })
       });
-      const questions = data.questions || [];
-      if (!questions.length) throw new Error("No questions returned.");
-      // Lock mode once questions are generated
-      setState({ phase: "question", questions, currentIndex: 0, answers: [] });
+      const rawQuestions = data.questions || [];
+      if (!rawQuestions.length) throw new Error("No questions returned.");
+      const questions = rawQuestions.map(q => ({
+        text: q,
+        phase: null,
+        framing: null,
+        competency: null,
+        evaluationMode: "star"
+      }));
+      setState({ phase: "question", questions, currentIndex: 0, answers: [], sessionType: "practice", jobDescription: jd });
     } catch (e) {
       btn.disabled = false;
       btn.textContent = "Generate Questions";
       document.getElementById("jd-status").textContent = "Error: " + e.message;
+    }
+  },
+
+  startSimulation: async () => {
+    const textarea = document.getElementById("jd-input");
+    const jd = textarea ? textarea.value.trim() : "";
+    if (!jd) {
+      document.getElementById("jd-status").textContent = "Please paste a job description first.";
+      return;
+    }
+
+    setState({ phase: "sim_loading", sessionType: "simulation", jobDescription: jd });
+
+    try {
+      const data = await requestJson(`${API}/generate-simulation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_description: jd,
+          interview_mode: state.interviewMode,
+          use_cv: state.useCv && state.cvLoaded
+        })
+      });
+
+      const questions = (data.questions || []).map(q => ({
+        text: q.question,
+        phase: q.phase,
+        framing: q.framing,
+        competency: q.competency,
+        evaluationMode: q.evaluation_mode
+      }));
+
+      if (!questions.length) throw new Error("No questions returned");
+
+      setState({
+        phase: "question",
+        questions,
+        currentIndex: 0,
+        answers: [],
+        interviewer: data.interviewer || {},
+        questionVisible: false
+      });
+    } catch (e) {
+      setState({ phase: "jd", sessionType: "practice" });
+      const statusEl = document.getElementById("jd-status");
+      if (statusEl) statusEl.textContent = "Simulation error: " + e.message;
+    }
+  },
+
+  simContinue: async () => {
+    const isLast = state.currentIndex === state.questions.length - 1;
+    if (isLast) {
+      setState({ phase: "sim_review_loading" });
+      try {
+        const answersPayload = state.answers.map((a, i) => ({
+          question_text: (state.questions[i] || {}).text || "",
+          phase: (state.questions[i] || {}).phase || "general",
+          competency: (state.questions[i] || {}).competency || "general",
+          evaluation_mode: (state.questions[i] || {}).evaluationMode || "star",
+          transcript: a.transcript || "",
+          result: a.result || {}
+        }));
+        const review = await requestJson(`${API}/simulation-review`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            job_description: state.jobDescription,
+            interview_mode: state.interviewMode,
+            answers: answersPayload
+          })
+        });
+        setState({ phase: "sim_holistic_review", holisticReview: review });
+      } catch (e) {
+        setState({ phase: "sim_holistic_review", holisticReview: { error: e.message } });
+      }
+    } else {
+      setState({ phase: "question", currentIndex: state.currentIndex + 1, questionVisible: false });
     }
   },
 
@@ -527,7 +913,7 @@ const actions = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          question: state.questions[idx],
+          question: (state.questions[idx] || {}).text || "",
           transcript: answer.transcript,
           interview_mode: state.interviewMode
         })
@@ -578,7 +964,11 @@ const actions = {
     if (!state.cvLoaded) return;
     state.useCv = e.target.checked;
     await saveSettings();
-    // No full re-render needed; checkbox is already in correct visual state
+  },
+
+  toggleAlwaysShow: async (e) => {
+    state.alwaysShowQuestion = e.target.checked;
+    await saveSettings();
   },
 
   uploadCv: handleCvUpload,
@@ -620,6 +1010,7 @@ async function boot() {
 
     if (settings.interview_mode) state.interviewMode = settings.interview_mode;
     if (settings.use_cv != null) state.useCv = settings.use_cv;
+    state.alwaysShowQuestion = settings.always_show_question ?? false;
 
     if (cvStatus.loaded) {
       state.cvLoaded = true;
