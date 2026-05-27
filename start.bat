@@ -4,6 +4,9 @@ echo  InterviewAI
 echo ================================
 echo.
 
+call "%~dp0stop.bat"
+echo.
+
 echo Starting Ollama in background...
 start /B "" "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" serve
 

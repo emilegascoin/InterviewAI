@@ -11,6 +11,27 @@ REQUIRED_ANALYSIS_KEYS = {
     "filler_words", "overall_score", "feedback", "sample_response"
 }
 
+SIMULATION_REQUIRED_QUESTIONS = 8
+SIMULATION_REQUIRED_KEYS = {"phase", "question", "framing", "competency", "evaluation_mode"}
+SIMULATION_FALLBACK_ARC = [
+    ("intro", "screening", "communication"),
+    ("background", "screening", "relevant_experience"),
+    ("background", "screening", "role_fit"),
+    ("behavioral", "star", "ownership"),
+    ("behavioral", "star", "collaboration"),
+    ("technical", "technical", "technical_depth"),
+    ("technical", "technical", "problem_solving"),
+    ("closing", "closing_question", "candidate_questions"),
+]
+
+SIMULATION_FALLBACK_CLOSING = {
+    "phase": "closing",
+    "question": "Before we wrap up, what questions do you have for me about the role, team, or expectations?",
+    "framing": "We have covered the main role requirements, so I want to leave time for your questions.",
+    "competency": "candidate_questions",
+    "evaluation_mode": "closing_question",
+}
+
 FILLER_PATTERN = re.compile(
     r"\b(um+|uh+|like|you know|sort of|kind of|basically|whatever|stuff|"
     r"i guess|i mean|okay|alright|right)\b",
@@ -20,6 +41,87 @@ FILLER_PATTERN = re.compile(
 
 def count_fillers(text: str) -> int:
     return len(FILLER_PATTERN.findall(text))
+
+
+def looks_like_closing_question(text: str) -> bool:
+    lowered = text.lower()
+    return (
+        "questions" in lowered
+        and (
+            "for me" in lowered
+            or "do you have" in lowered
+            or "would you like to ask" in lowered
+            or "anything you'd like to ask" in lowered
+        )
+    )
+
+
+def normalize_simulation_questions(data: dict, interview_mode: str) -> dict:
+    questions = data.get("questions", [])
+    if not isinstance(questions, list) or not questions:
+        raise ValueError("Model returned no simulation questions")
+
+    normalized = []
+    for i, question in enumerate(questions[:SIMULATION_REQUIRED_QUESTIONS]):
+        if isinstance(question, str):
+            question = {"question": question}
+        if not isinstance(question, dict):
+            continue
+
+        phase, evaluation_mode, competency = SIMULATION_FALLBACK_ARC[min(i, 7)]
+        if interview_mode == "screening" and i in (5, 6):
+            evaluation_mode = "screening"
+            competency = "motivation" if i == 5 else "culture_fit"
+
+        normalized.append({
+            "phase": question.get("phase") or phase,
+            "question": question.get("question") or question.get("text") or "",
+            "framing": question.get("framing") or "I want to connect this next question back to the role requirements.",
+            "competency": question.get("competency") or competency,
+            "evaluation_mode": question.get("evaluation_mode") or evaluation_mode,
+        })
+
+    if len(normalized) < SIMULATION_REQUIRED_QUESTIONS:
+        while len(normalized) < SIMULATION_REQUIRED_QUESTIONS - 1:
+            idx = len(normalized)
+            phase, evaluation_mode, competency = SIMULATION_FALLBACK_ARC[idx]
+            if interview_mode == "screening" and idx in (5, 6):
+                evaluation_mode = "screening"
+                competency = "motivation" if idx == 5 else "culture_fit"
+            normalized.append({
+                "phase": phase,
+                "question": "Can you tell me about an experience that best demonstrates your fit for this role?",
+                "framing": "This role calls for evidence of relevant experience, so I want to explore that further.",
+                "competency": competency,
+                "evaluation_mode": evaluation_mode,
+            })
+        normalized.append(SIMULATION_FALLBACK_CLOSING.copy())
+
+    normalized = normalized[:SIMULATION_REQUIRED_QUESTIONS]
+    last_question = normalized[-1]
+    if (
+        last_question.get("evaluation_mode") != "closing_question"
+        and not looks_like_closing_question(last_question.get("question", ""))
+    ):
+        normalized[-1] = SIMULATION_FALLBACK_CLOSING.copy()
+    else:
+        normalized[-1] = {
+            **SIMULATION_FALLBACK_CLOSING,
+            **last_question,
+            "phase": "closing",
+            "evaluation_mode": "closing_question",
+        }
+
+    for i, question in enumerate(normalized):
+        missing = SIMULATION_REQUIRED_KEYS - question.keys()
+        if missing:
+            raise ValueError(f"Simulation question {i + 1} missing fields: {missing}")
+        if not question["question"]:
+            raise ValueError(f"Simulation question {i + 1} is empty")
+
+    data["questions"] = normalized
+    data.setdefault("interviewer", {})
+    return data
 
 
 async def generate(prompt: str, json_mode: bool = False) -> str:
@@ -141,19 +243,7 @@ Return ONLY valid JSON. No markdown, no commentary. Use double quotes. Return th
         raise ValueError("Model returned no valid JSON")
     data = json.loads(raw[start:end])
 
-    questions = data.get("questions", [])
-    if len(questions) != 8:
-        raise ValueError(f"Simulation must have exactly 8 questions, got {len(questions)}")
-    if questions[7].get("evaluation_mode") != "closing_question":
-        raise ValueError("Q8 must be closing_question")
-
-    required_question_keys = {"phase", "question", "framing", "competency", "evaluation_mode"}
-    for i, question in enumerate(questions):
-        missing = required_question_keys - question.keys()
-        if missing:
-            raise ValueError(f"Simulation question {i + 1} missing fields: {missing}")
-
-    return data
+    return normalize_simulation_questions(data, interview_mode)
 
 
 async def analyze_simulation_response(

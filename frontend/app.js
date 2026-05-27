@@ -127,6 +127,7 @@ function renderJdCard() {
       <div class="card-actions">
         <button class="btn primary" data-action="generate">Generate Questions</button>
         <button class="btn secondary" data-action="startSimulation">Full Simulation</button>
+        <button class="btn secondary" data-action="shutdown">Exit App</button>
       </div>
       <div class="status" id="jd-status"></div>
     </div>
@@ -362,6 +363,7 @@ function renderDoneCard() {
       <div class="results-actions">
         <button class="btn secondary" data-action="restart">Start Over</button>
         <button class="btn primary" data-action="download">Download PDF</button>
+        <button class="btn secondary" data-action="shutdown">Exit App</button>
       </div>
     </div>
   `);
@@ -546,6 +548,7 @@ function renderSimHolisticReviewCard() {
       <div class="results-actions">
         <button class="btn secondary" data-action="restart">Start Over</button>
         <button class="btn primary" data-action="download">Download PDF</button>
+        <button class="btn secondary" data-action="shutdown">Exit App</button>
       </div>
     </div>
   `);
@@ -950,6 +953,18 @@ const actions = {
   restart: () => {
     stopRecording();
     window.location.reload();
+  },
+
+  shutdown: async () => {
+    if (!confirm("Stop the InterviewAI backend now?")) return;
+    stopRecording();
+    setCard(`
+      <div class="card">
+        <h2>InterviewAI Stopped</h2>
+        <p class="sim-loading-text">You can close this tab now. Run start.bat when you want to use it again.</p>
+      </div>
+    `);
+    fetch(`${API}/shutdown`, { method: "POST", keepalive: true }).catch(() => {});
   },
 
   setMode: async (e) => {

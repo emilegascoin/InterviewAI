@@ -8,6 +8,7 @@ import ollama_handler
 import cv_handler
 import os
 import json
+import subprocess
 
 app = FastAPI()
 
@@ -28,6 +29,11 @@ DEFAULT_SETTINGS = {
 
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
 app.mount("/static", StaticFiles(directory=frontend_path), name="static")
+
+BUILD_INFO = {
+    "simulation_normalizer": True,
+    "simulation_questions": 8,
+}
 
 
 def ensure_data_dir():
@@ -53,6 +59,26 @@ def save_settings(settings: dict):
 @app.get("/")
 def root():
     return FileResponse(os.path.join(frontend_path, "index.html"))
+
+
+@app.get("/health")
+def health():
+    return BUILD_INFO
+
+
+@app.post("/shutdown")
+def shutdown():
+    subprocess.Popen(
+        [
+            "cmd",
+            "/c",
+            'timeout /t 1 /nobreak >nul & for /f "tokens=5" %a in (\'netstat -ano ^| findstr ":8000" ^| findstr "LISTENING"\') do taskkill /PID %a /F /T',
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    return {"status": "shutting_down"}
 
 
 # ── Settings ─────────────────────────────────────────────────────────────────
