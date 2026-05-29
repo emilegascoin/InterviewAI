@@ -9,6 +9,8 @@ import cv_handler
 import os
 import json
 import subprocess
+import threading
+import time
 
 app = FastAPI()
 
@@ -68,16 +70,10 @@ def health():
 
 @app.post("/shutdown")
 def shutdown():
-    subprocess.Popen(
-        [
-            "cmd",
-            "/c",
-            'timeout /t 1 /nobreak >nul & for /f "tokens=5" %a in (\'netstat -ano ^| findstr ":8000" ^| findstr "LISTENING"\') do taskkill /PID %a /F /T',
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW,
-    )
+    def _kill():
+        time.sleep(0.8)
+        os._exit(0)
+    threading.Thread(target=_kill, daemon=True).start()
     return {"status": "shutting_down"}
 
 

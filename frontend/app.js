@@ -127,7 +127,6 @@ function renderJdCard() {
       <div class="card-actions">
         <button class="btn primary" data-action="generate">Generate Questions</button>
         <button class="btn secondary" data-action="startSimulation">Full Simulation</button>
-        <button class="btn secondary" data-action="shutdown">Exit App</button>
       </div>
       <div class="status" id="jd-status"></div>
     </div>
@@ -363,7 +362,6 @@ function renderDoneCard() {
       <div class="results-actions">
         <button class="btn secondary" data-action="restart">Start Over</button>
         <button class="btn primary" data-action="download">Download PDF</button>
-        <button class="btn secondary" data-action="shutdown">Exit App</button>
       </div>
     </div>
   `);
@@ -548,7 +546,6 @@ function renderSimHolisticReviewCard() {
       <div class="results-actions">
         <button class="btn secondary" data-action="restart">Start Over</button>
         <button class="btn primary" data-action="download">Download PDF</button>
-        <button class="btn secondary" data-action="shutdown">Exit App</button>
       </div>
     </div>
   `);

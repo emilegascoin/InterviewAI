@@ -19,6 +19,32 @@
   --radius: 12px;
 }
 
+/* Fixed exit button — top-right corner, always visible */
+#exit-btn {
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  z-index: 9999;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: #c0392b;
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  transition: background 0.15s, transform 0.1s;
+}
+#exit-btn:hover { background: #e74c3c; transform: scale(1.1); }
+#exit-btn:active { transform: scale(0.95); }
+
+@media print { #exit-btn { display: none !important; } }
+
 body {
   background: var(--bg);
   color: var(--text);
