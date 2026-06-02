@@ -7,9 +7,14 @@ _model = None
 def get_model():
     global _model
     if _model is None:
-        print("Loading Whisper large-v2 model on CPU...")
-        _model = WhisperModel("large-v2", device="cpu", compute_type="int8")
-        print("Whisper model ready.")
+        try:
+            print("Loading Whisper large-v2 model on CUDA...")
+            _model = WhisperModel("large-v2", device="cuda", compute_type="float16")
+            print("Whisper model ready (CUDA / float16).")
+        except Exception as e:
+            print(f"CUDA load failed ({e}), falling back to CPU...")
+            _model = WhisperModel("large-v2", device="cpu", compute_type="int8")
+            print("Whisper model ready (CPU / int8).")
     return _model
 
 def transcribe(audio_bytes: bytes) -> str:
