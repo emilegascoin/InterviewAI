@@ -686,6 +686,17 @@ textarea:focus {
   font-style: italic;
 }
 
+mark.filler-word {
+  background: rgba(239, 68, 68, 0.22);
+  color: #fca5a5;
+  border-radius: 3px;
+  padding: 0 2px;
+  font-style: normal;
+}
+@media print {
+  mark.filler-word { background: #fde8e8 !important; color: #000 !important; }
+}
+
 .score-bar {
   height: 4px;
   background: var(--border);

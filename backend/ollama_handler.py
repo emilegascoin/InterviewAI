@@ -472,12 +472,14 @@ STAR COVERAGE — screening answers are not expected to follow STAR structure. O
 filler_words: Use the pre-counted value of {filler_count}. Do not recount.
 
 FEEDBACK — coaching for a screening interview:
-- First sentence: most important issue (missed part of question, weak motivation signal, or poor communication habit)
+- First sentence: name the single most important issue (missed part of question, weak motivation signal, or poor communication habit)
+- Be direct — name the problem specifically, not vaguely
+- Do NOT quote or paraphrase the answer back — the candidate can read their own transcript
+- Do NOT restate what they said well — the sample response handles that
 - Call out exactly which part of the question they did not address if relevant
-- Focus on how they are selling themselves for the role — are they conveying genuine interest and relevant value?
-- Reference exact phrases they used (quote them) when critiquing
+- Focus on whether they are genuinely selling themselves — motivation, relevance, communication quality
 - Final sentence: one concrete action to improve this specific answer for a screening context
-- 4 sentences max, no generic praise"""
+- 3 sentences max, no generic praise"""
 
         extra_instruction = "This is a SCREENING interview answer — assess communication quality, motivation signals, and self-presentation as a recruiter would."
 
@@ -522,13 +524,14 @@ STAR COVERAGE — strict detection:
 filler_words: Use the pre-counted value of {filler_count}. Do not recount.
 
 FEEDBACK — coaching for a technical interview:
-- First sentence: the single most important issue (missed part of question, weakest STAR element, or critical language problem)
-- If they missed part of the question, name exactly which part was skipped
-- If STAR elements are missing, say which ones and what specific content would fill them
-- If they lack experience in something asked, coach the correct technique: acknowledge the gap honestly, draw a genuine parallel, state a specific learning intent
-- Reference exact phrases they used (quote them) when critiquing
-- Final sentence: one concrete, specific action they can take right now
-- 4 sentences max, no generic praise, never start with "Great answer"
+- First sentence: name the single most important gap (missed part of question, weakest STAR element, communication habit, or missing depth)
+- Be direct — name the problem specifically, not vaguely ("you skipped the Result" not "consider adding more detail")
+- Do NOT quote or paraphrase the answer back — the candidate can read their own transcript
+- Do NOT restate what they said well — the sample response handles that
+- If STAR elements are missing, name exactly which ones and what content would fill them
+- If they lack experience, coach the gap-bridging technique: acknowledge honestly, draw a genuine parallel, state a specific learning intent
+- Final sentence: one concrete action they can take right now to improve this specific answer
+- 3 sentences max, no generic praise, never start with "Great answer"
 """
 
     prompt = f"""You are a senior interviewer and career coach with 15 years of hiring experience. Analyze this {mode_label} interview answer.

@@ -209,7 +209,7 @@ function renderQuestionCard() {
       ${showTranscript ? `
         <div class="transcript-box">
           <div class="transcript-label">Transcript</div>
-          <p class="transcript-text">${escHtml(answer.transcript)}</p>
+          <p class="transcript-text">${highlightTranscript(answer.transcript)}</p>
           ${showAnalyse ? `<button class="btn primary" data-action="analyze">Analyse Response</button>` : ""}
           ${(isBusy && !isSim) ? `<button class="btn primary" disabled><span class="spinner"></span> Analysing...</button>` : ""}
         </div>
@@ -339,7 +339,7 @@ function renderDoneCard() {
         ${answer.transcript ? `
           <div class="summary-transcript">
             <div class="transcript-label">Your Answer</div>
-            <p>${escHtml(answer.transcript)}</p>
+            <p>${highlightTranscript(answer.transcript)}</p>
           </div>
         ` : ""}
 
@@ -575,6 +575,17 @@ function fillerCard(count) {
 
 function starItem(label, covered) {
   return `<span class="star-item ${covered ? "covered" : "missing"}">${label}</span>`;
+}
+
+const FILLER_RE = /\b(um+|uh+|like|you know|sort of|kind of|basically|whatever|stuff|i guess|i mean|okay|alright|right)\b/gi;
+
+function highlightTranscript(text) {
+  if (!text) return "";
+  return escHtml(text).replace(
+    // Re-run on escaped text — filler words contain no special chars so safe
+    new RegExp(FILLER_RE.source, "gi"),
+    match => `<mark class="filler-word">${match}</mark>`
+  );
 }
 
 function escHtml(str) {
