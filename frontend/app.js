@@ -260,10 +260,10 @@ function renderResultsCard() {
       <div class="question-box">${escHtml(q)}</div>
 
       <div class="scores-grid">
-        ${scoreCard("Overall", d.overall_score)}
-        ${scoreCard("Relevance", d.relevance_score)}
-        ${scoreCard("Specificity", d.specificity_score)}
-        ${scoreCard("Formality", d.formality_score)}
+        ${scoreCard("Overall", d.overall_score, d.overall_why)}
+        ${scoreCard("Relevance", d.relevance_score, d.relevance_why)}
+        ${scoreCard("Specificity", d.specificity_score, d.specificity_why)}
+        ${scoreCard("Formality", d.formality_score, d.formality_why)}
         ${fillerCard(d.filler_words ?? 0)}
       </div>
 
@@ -323,10 +323,10 @@ function renderDoneCard() {
         </div>
 
         <div class="scores-grid">
-          ${scoreCard("Overall", r.overall_score)}
-          ${scoreCard("Relevance", r.relevance_score)}
-          ${scoreCard("Specificity", r.specificity_score)}
-          ${scoreCard("Formality", r.formality_score)}
+          ${scoreCard("Overall", r.overall_score, r.overall_why)}
+          ${scoreCard("Relevance", r.relevance_score, r.relevance_why)}
+          ${scoreCard("Specificity", r.specificity_score, r.specificity_why)}
+          ${scoreCard("Formality", r.formality_score, r.formality_why)}
           ${fillerCard(r.filler_words ?? 0)}
         </div>
 
@@ -552,13 +552,15 @@ function renderSimHolisticReviewCard() {
 }
 
 // ── HTML helpers ──────────────────────────────────────────────────────────────
-function scoreCard(label, value) {
+function scoreCard(label, value, why = null) {
   const v = Math.min(10, Math.max(0, Number(value) || 0));
+  const whyHtml = why ? `<div class="score-why">${escHtml(why)}</div>` : "";
   return `
     <div class="score-card">
       <div class="score-label">${label}</div>
       <div class="score-value">${value != null ? v + "/10" : "—"}</div>
       <div class="score-bar"><div class="score-fill" style="width:${v * 10}%"></div></div>
+      ${whyHtml}
     </div>`;
 }
 

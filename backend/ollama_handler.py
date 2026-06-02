@@ -8,7 +8,8 @@ MODEL = "qwen2.5:7b"
 REQUIRED_ANALYSIS_KEYS = {
     "formality_score", "formality_label", "formality_notes",
     "specificity_score", "relevance_score", "star_coverage",
-    "filler_words", "overall_score", "feedback", "sample_response"
+    "filler_words", "overall_score", "feedback", "sample_response",
+    "overall_why", "relevance_why", "specificity_why", "formality_why",
 }
 
 SIMULATION_REQUIRED_QUESTIONS = 8
@@ -288,12 +289,17 @@ Scoring criteria:
 
 Return ONLY valid JSON. No markdown, no commentary. Use double quotes. All score fields must be integers. No line breaks inside string values.
 
+The four "why" fields must each be a single sentence (max 15 words) explaining the score. Be concrete. Examples: "Generic question easily found online with no role-specific angle.", "Shows genuine curiosity about the team structure.", "Asked casually but professionally overall."
+
 {{
   "formality_score": <integer 1-10>,
   "formality_label": "<Informal|Neutral|Professional>",
   "formality_notes": "<exact phrase or habit from their question that most affected the score>",
+  "formality_why": "<one sentence, max 15 words, explaining the formality score>",
   "specificity_score": <integer 1-10>,
+  "specificity_why": "<one sentence, max 15 words, explaining the specificity score>",
   "relevance_score": <integer 1-10>,
+  "relevance_why": "<one sentence, max 15 words, explaining the relevance score>",
   "star_coverage": {{
     "situation": false,
     "task": false,
@@ -302,6 +308,7 @@ Return ONLY valid JSON. No markdown, no commentary. Use double quotes. All score
   }},
   "filler_words": {filler_count},
   "overall_score": <integer 1-10>,
+  "overall_why": "<one sentence, max 15 words, explaining the overall score>",
   "feedback": "<3-4 sentences of direct coaching referencing what they actually said>",
   "sample_response": "<one strong closing question tailored to this specific role>"
 }}"""
@@ -549,12 +556,17 @@ sample_response:
 
 Return ONLY valid JSON. No markdown, no commentary. Use double quotes. All score fields must be integers. No line breaks inside string values.
 
+The four "why" fields must each be a single sentence (max 15 words) explaining the score — what specifically earned or lost points. Be concrete, not generic. Examples: "Named three technologies but gave no measurable outcome.", "Answered the motivation question but skipped the career-goals part.", "Mid-sentence restart and repeated 'basically' four times.", "Strong specificity with named projects and quantified impact."
+
 {{
   "formality_score": <integer 1-10>,
   "formality_label": "<Informal|Neutral|Professional>",
   "formality_notes": "<exact phrase or habit from their answer that most affected the score>",
+  "formality_why": "<one sentence, max 15 words, explaining the formality score>",
   "specificity_score": <integer 1-10>,
+  "specificity_why": "<one sentence, max 15 words, explaining the specificity score>",
   "relevance_score": <integer 1-10>,
+  "relevance_why": "<one sentence, max 15 words, explaining the relevance score>",
   "star_coverage": {{
     "situation": <true|false>,
     "task": <true|false>,
@@ -563,6 +575,7 @@ Return ONLY valid JSON. No markdown, no commentary. Use double quotes. All score
   }},
   "filler_words": {filler_count},
   "overall_score": <integer 1-10>,
+  "overall_why": "<one sentence, max 15 words, explaining the overall score>",
   "feedback": "<4 sentences of direct coaching referencing what they actually said>",
   "sample_response": "<polished version using their real experience, 4-6 sentences>"
 }}"""
