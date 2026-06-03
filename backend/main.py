@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -244,6 +244,31 @@ async def analyze_simulation_ep(req: AnalyzeSimulationRequest):
             req.interview_mode
         )
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/transcribe/analyze-simulation")
+async def transcribe_analyze_simulation_ep(
+    audio: UploadFile = File(...),
+    question_obj: str = Form(...),
+    interview_mode: str = Form("technical"),
+):
+    try:
+        audio_bytes = await audio.read()
+        transcript = whisper_handler.transcribe(audio_bytes).strip()
+        if not transcript:
+            raise HTTPException(status_code=400, detail="No speech detected")
+
+        question = json.loads(question_obj)
+        result = await ollama_handler.analyze_simulation_response(
+            question,
+            transcript,
+            interview_mode
+        )
+        return {"transcript": transcript, "result": result}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

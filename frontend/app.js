@@ -17,6 +17,9 @@ const state = {
   questionVisible: false,
   questionDelivered: true,
   holisticReview: null,
+  // Intense Mode fields
+  analyses: [],        // [{status, promise, result, error}] — one per question
+  simulationRunId: null,
   recorder: { mediaRecorder: null, stream: null, chunks: [], timerInterval: null, seconds: 0 }
 };
 
@@ -48,18 +51,24 @@ function render() {
     sim_loading:         renderSimLoadingCard,
     sim_between:         renderSimBetweenCard,
     sim_review_loading:  renderSimReviewLoadingCard,
-    sim_holistic_review: renderSimHolisticReviewCard
+    sim_holistic_review: renderSimHolisticReviewCard,
+    // Intense Mode phases
+    intense_question:    renderIntenseQuestionCard,
+    intense_recording:   renderIntenseQuestionCard,
+    intense_finalizing:  renderIntenseFinalizingCard
   };
   (map[state.phase] || renderJdCard)();
 
   const progress = document.getElementById("progress");
-  const hideProgressPhases = ["jd", "done", "sim_loading", "sim_between", "sim_review_loading", "sim_holistic_review"];
+  const hideProgressPhases = ["jd", "done", "sim_loading", "sim_between", "sim_review_loading", "sim_holistic_review", "intense_finalizing"];
   if (hideProgressPhases.includes(state.phase)) {
     progress.classList.add("hidden");
   } else {
     let progressText;
     if (state.sessionType === "simulation") {
       progressText = `Simulation — Question ${state.currentIndex + 1} of 8`;
+    } else if (state.sessionType === "intense") {
+      progressText = `Intense Mode — Question ${state.currentIndex + 1} of ${state.questions.length}`;
     } else {
       const modeLabel = state.interviewMode === "screening" ? "Screening" : "Technical";
       progressText = `${modeLabel} — Question ${state.currentIndex + 1} of ${state.questions.length}`;
@@ -127,6 +136,7 @@ function renderJdCard() {
       <div class="card-actions">
         <button class="btn primary" data-action="generate">Generate Questions</button>
         <button class="btn secondary" data-action="startSimulation">Full Simulation</button>
+        <button class="btn danger" data-action="startIntense">Intense Simulation</button>
       </div>
       <div class="status" id="jd-status"></div>
     </div>
@@ -627,7 +637,7 @@ function stopTimer() {
 // ── Recording ─────────────────────────────────────────────────────────────────
 let _recordingStarting = false;
 
-async function startRecording() {
+async function startRecording(targetPhase = "recording", onStopFn = stopAndTranscribe) {
   if (_recordingStarting) return;
   _recordingStarting = true;
   let stream;
@@ -638,7 +648,7 @@ async function startRecording() {
     state.recorder.mediaRecorder = mr;
     state.recorder.chunks = [];
     mr.ondataavailable = e => { if (e.data.size > 0) state.recorder.chunks.push(e.data); };
-    mr.onstop = stopAndTranscribe;
+    mr.onstop = onStopFn;
     mr.onerror = () => {
       stopTimer();
       setStatus("Recording error — please try again.");
@@ -646,7 +656,7 @@ async function startRecording() {
     };
     mr.start();
     startTimer();
-    setState({ phase: "recording" });
+    setState({ phase: targetPhase });
   } catch (e) {
     if (stream) stream.getTracks().forEach(t => t.stop());
     setStatus("Microphone access denied: " + e.message);
@@ -701,6 +711,301 @@ async function stopAndTranscribe() {
     setState({ phase: "question" });
     setAnswerError("Transcription error: " + e.message);
   }
+}
+
+// ── Intense Mode ─────────────────────────────────────────────────────────────
+
+// TTS helpers
+function speakText(text) {
+  return new Promise(resolve => {
+    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+      resolve();
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    utterance.onend = resolve;
+    utterance.onerror = resolve;
+    window.speechSynthesis.speak(utterance);
+  });
+}
+
+function cancelSpeech() {
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+}
+
+// Deliver question via TTS then auto-start recording
+async function deliverQuestion(idx, runId) {
+  if (state.simulationRunId !== runId) return;
+  const qObj = state.questions[idx] || {};
+  const framing = qObj.framing ? `${qObj.framing} ` : "";
+  const qText = qObj.text || "";
+  setState({ phase: "intense_question", currentIndex: idx, questionVisible: false });
+  await speakText(`${framing}${qText}`);
+  if (state.simulationRunId !== runId) return;
+  await startRecordingIntense(idx, runId);
+}
+
+// Start recording in intense mode (fires automatically after TTS)
+async function startRecordingIntense(idx, runId) {
+  if (state.simulationRunId !== runId) return;
+  if (_recordingStarting) return;
+  _recordingStarting = true;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mr = new MediaRecorder(stream, { mimeType: "audio/webm" });
+    state.recorder.stream = stream;
+    state.recorder.mediaRecorder = mr;
+    state.recorder.chunks = [];
+    mr.ondataavailable = e => { if (e.data.size > 0) state.recorder.chunks.push(e.data); };
+    mr.onstop = () => {
+      if (state.simulationRunId === runId) stopAndTranscribeIntense(idx, runId);
+    };
+    mr.onerror = () => { stopTimer(); };
+    mr.start();
+    startTimer();
+    setState({ phase: "intense_recording" });
+  } catch (e) {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    // Record the failure so finalizeIntense doesn't hand a null slot to /simulation-review
+    const analyses = [...state.analyses];
+    analyses[idx] = { status: "failed", promise: Promise.resolve(), result: null, error: "Mic error: " + e.message };
+    state.analyses = analyses;
+    // Abort on first question if mic is flat-out denied — no point continuing
+    if (idx === 0) {
+      setState({ phase: "jd", sessionType: "practice" });
+      const statusEl = document.getElementById("jd-status");
+      if (statusEl) statusEl.textContent = "Microphone access denied — Intense Mode requires mic access.";
+      return;
+    }
+    advanceIntense(idx, runId);
+  } finally {
+    _recordingStarting = false;
+  }
+}
+
+// Called when user clicks Stop in intense mode — fires background analysis + advances immediately
+function stopAndTranscribeIntense(idx, runId) {
+  if (state.simulationRunId !== runId) return;
+  const chunks = state.recorder.chunks;
+  const blob = chunks.length ? new Blob(chunks, { type: "audio/webm" }) : null;
+  const answers = [...state.answers];
+  answers[idx] = { ...(answers[idx] || {}), audioBlob: blob };
+  state.answers = answers;
+
+  if (blob && blob.size > 0) {
+    startBackgroundAnalysis(idx, runId);
+  } else {
+    // Mark as error so finalizeIntense doesn't hang
+    const analyses = [...state.analyses];
+    analyses[idx] = { status: "failed", promise: Promise.resolve(), result: null, error: "No audio captured" };
+    state.analyses = analyses;
+  }
+
+  advanceIntense(idx, runId);
+}
+
+// Runs transcription + analysis in the background; stores result in state.analyses[idx]
+function startBackgroundAnalysis(idx, runId) {
+  const answer = state.answers[idx] || {};
+  const blob = answer.audioBlob;
+  const q = state.questions[idx] || {};
+
+  const promise = (async () => {
+    if (!blob || blob.size === 0) throw new Error("No audio captured");
+    const formData = new FormData();
+    formData.append("audio", blob, "recording.webm");
+    formData.append("question_obj", JSON.stringify({
+      phase: q.phase,
+      question: q.text,
+      framing: q.framing,
+      competency: q.competency,
+      evaluation_mode: q.evaluationMode
+    }));
+    formData.append("interview_mode", state.interviewMode);
+
+    return await requestJson(`${API}/transcribe/analyze-simulation`, {
+      method: "POST",
+      body: formData
+    });
+  })();
+
+  // Mark as pending immediately
+  const analyses = [...state.analyses];
+  analyses[idx] = { status: "pending", promise, result: null, error: null };
+  state.analyses = analyses;
+
+  // Update status when promise settles (non-blocking)
+  promise.then(result => {
+    if (state.simulationRunId !== runId) return;
+    const updated = [...state.analyses];
+    updated[idx] = { status: "success", promise, result, error: null };
+    state.analyses = updated;
+    // Refresh finalizing card if we're already there
+    if (state.phase === "intense_finalizing") render();
+  }).catch(err => {
+    if (state.simulationRunId !== runId) return;
+    const updated = [...state.analyses];
+    updated[idx] = { status: "failed", promise, result: null, error: err.message };
+    state.analyses = updated;
+    if (state.phase === "intense_finalizing") render();
+  });
+}
+
+// Move to next question or begin finalising
+function advanceIntense(idx, runId) {
+  if (state.simulationRunId !== runId) return;
+  const nextIdx = idx + 1;
+  if (nextIdx < state.questions.length) {
+    deliverQuestion(nextIdx, runId);
+  } else {
+    setState({ phase: "intense_finalizing" });
+    finalizeIntense(runId);
+  }
+}
+
+// Wait for all background analyses, then call /simulation-review
+async function finalizeIntense(runId) {
+  if (state.simulationRunId !== runId) return;
+
+  // Wait for every background promise to settle
+  const promises = state.analyses.map(a => (a && a.promise) ? a.promise : Promise.resolve());
+  await Promise.allSettled(promises);
+
+  if (state.simulationRunId !== runId) return;
+
+  // Populate state.answers for compatibility with renderSimHolisticReviewCard
+  const answers = state.questions.map((_, i) => {
+    const a = state.analyses[i] || {};
+    const existing = state.answers[i] || {};
+    return {
+      ...existing,
+      transcript: (a.result && a.result.transcript) || "",
+      result:     (a.result && a.result.result)     || null,
+      error:       a.error || null
+    };
+  });
+  state.answers = answers;
+
+  const answersPayload = state.questions.map((q, i) => {
+    const a = state.analyses[i] || {};
+    return {
+      question_text:   q.text           || "",
+      phase:           q.phase          || "general",
+      competency:      q.competency     || "general",
+      evaluation_mode: q.evaluationMode || "star",
+      transcript: (a.result && a.result.transcript) || "",
+      result:     (a.result && a.result.result)     || {}
+    };
+  });
+
+  try {
+    const review = await requestJson(`${API}/simulation-review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        job_description:  state.jobDescription,
+        interview_mode:   state.interviewMode,
+        answers:          answersPayload
+      })
+    });
+    if (state.simulationRunId !== runId) return;
+    setState({ phase: "sim_holistic_review", holisticReview: review });
+  } catch (e) {
+    if (state.simulationRunId !== runId) return;
+    setState({ phase: "sim_holistic_review", holisticReview: { error: e.message } });
+  }
+}
+
+// ── Card: Intense Mode (question + recording) ─────────────────────────────────
+function renderIntenseQuestionCard() {
+  const phase = state.phase;
+  const idx   = state.currentIndex;
+  const qObj  = state.questions[idx] || {};
+  const total = state.questions.length;
+  const isRecording = phase === "intense_recording";
+  const interviewer = state.interviewer || {};
+  const interviewerLabel = [interviewer.name, interviewer.role].filter(Boolean).join(" - ") || "Interviewer";
+  const pendingCount = state.analyses.filter(a => a && a.status === "pending").length;
+
+  const dots = state.questions.map((_, i) => {
+    const a = state.analyses[i];
+    let cls = "intense-dot";
+    if (!a)                       cls += " intense-dot--pending";
+    else if (a.status === "pending") cls += " intense-dot--running";
+    else if (a.status === "success") cls += " intense-dot--done";
+    else if (a.status === "failed")  cls += " intense-dot--error";
+    else                             cls += " intense-dot--pending";
+    if (i === idx)                cls += " intense-dot--current";
+    return `<div class="${cls}" title="Q${i + 1}"></div>`;
+  }).join("");
+
+  setCard(`
+    <div class="card intense-card">
+      <div class="intense-interviewer">${escHtml(interviewerLabel)}</div>
+      <div class="intense-header">
+        <span class="intense-mode-badge">Intense Mode</span>
+        <span class="intense-progress">Q${idx + 1} of ${total}</span>
+      </div>
+
+      <div class="intense-dots">${dots}</div>
+
+      ${!isRecording ? `
+        <div class="intense-status tts-speaking">
+          <span class="tts-pulse"></span> Interviewer speaking...
+        </div>
+      ` : ""}
+
+      <div class="question-box">${escHtml(qObj.text || "")}</div>
+
+      ${isRecording ? `
+        <div class="intense-recording-state">
+          <div class="intense-status">Listening...</div>
+          <div class="record-controls">
+            <button class="btn record recording intense-stop-btn" data-action="intenseStop">Stop</button>
+            <div class="timer" id="timer">${formatTime(state.recorder.seconds)}</div>
+          </div>
+          <p class="intense-status">Processing ${pendingCount} question${pendingCount === 1 ? "" : "s"} in background...</p>
+        </div>
+      ` : `
+        <div class="intense-waiting-state">
+          <p class="intense-status">Recording starts automatically when speaking finishes.</p>
+        </div>
+      `}
+    </div>
+  `);
+}
+
+// ── Card: Intense Mode finalising ─────────────────────────────────────────────
+function renderIntenseFinalizingCard() {
+  const total = state.questions.length;
+  const done  = state.analyses.filter(a => a && (a.status === "success" || a.status === "failed")).length;
+
+  const dots = state.questions.map((_, i) => {
+    const a = state.analyses[i];
+    let cls = "intense-dot";
+    if (!a)                         cls += " intense-dot--pending";
+    else if (a.status === "pending") cls += " intense-dot--running";
+    else if (a.status === "success") cls += " intense-dot--done";
+    else if (a.status === "failed")  cls += " intense-dot--error";
+    else                             cls += " intense-dot--pending";
+    return `<div class="${cls}" title="Q${i + 1}"></div>`;
+  }).join("");
+
+  setCard(`
+    <div class="card">
+      <h2>Reviewing your performance...</h2>
+      <p class="intense-finalizing-progress">${done} of ${total} complete</p>
+      <div class="intense-dots" style="margin-bottom:20px">${dots}</div>
+      <p class="sim-loading-text">Compiling your holistic review.</p>
+      <div class="status"><span class="spinner"></span> This may take 30–45 seconds</div>
+    </div>
+  `);
 }
 
 // ── Simulation: auto-analyze after transcription ──────────────────────────────
@@ -961,12 +1266,14 @@ const actions = {
   download: () => window.print(),
 
   restart: () => {
+    cancelSpeech();
     stopRecording();
     window.location.reload();
   },
 
   shutdown: async () => {
     if (!confirm("Stop the InterviewAI backend now?")) return;
+    cancelSpeech();
     stopRecording();
     setCard(`
       <div class="card">
@@ -997,6 +1304,69 @@ const actions = {
   },
 
   uploadCv: handleCvUpload,
+
+  startIntense: async () => {
+    const textarea = document.getElementById("jd-input");
+    const jd = textarea ? textarea.value.trim() : "";
+    if (!jd) {
+      document.getElementById("jd-status").textContent = "Please paste a job description first.";
+      return;
+    }
+
+    const runId = Date.now();
+    setState({
+      phase: "sim_loading",
+      sessionType: "intense",
+      jobDescription: jd,
+      simulationRunId: runId,
+      analyses: [],
+      questions: [],
+      answers: []
+    });
+
+    try {
+      const data = await requestJson(`${API}/generate-simulation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_description: jd,
+          interview_mode: state.interviewMode,
+          use_cv: state.useCv && state.cvLoaded
+        })
+      });
+
+      const questions = (data.questions || []).map(q => ({
+        text: q.question,
+        phase: q.phase,
+        framing: q.framing,
+        competency: q.competency,
+        evaluationMode: q.evaluation_mode
+      }));
+
+      if (!questions.length) throw new Error("No questions returned");
+      if (state.simulationRunId !== runId) return;
+
+      state.questions = questions;
+      state.analyses  = questions.map(() => ({ status: "idle", promise: null, result: null, error: null }));
+      state.currentIndex = 0;
+      state.answers = [];
+      state.interviewer = data.interviewer || {};
+
+      deliverQuestion(0, runId);
+    } catch (e) {
+      if (state.simulationRunId !== runId) return;
+      setState({ phase: "jd", sessionType: "practice" });
+      const statusEl = document.getElementById("jd-status");
+      if (statusEl) statusEl.textContent = "Intense Mode error: " + e.message;
+    }
+  },
+
+  intenseStop: () => {
+    stopTimer();
+    const { mediaRecorder, stream } = state.recorder;
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+    if (stream) stream.getTracks().forEach(t => t.stop());
+  },
 
   deleteCv: async () => {
     try {
