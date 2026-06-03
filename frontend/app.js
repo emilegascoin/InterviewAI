@@ -506,7 +506,7 @@ function renderSimHolisticReviewCard() {
       <div style="text-align:center;margin-bottom:16px">
         <span class="hire-badge ${hireClass}">${escHtml(r.hire_signal || "Mixed")}</span>
         <p class="hire-reasoning" style="font-size:14px;color:var(--muted);margin-top:8px">${escHtml(r.hire_reasoning || "")}</p>
-        <p class="done-avg" style="margin-top:8px">Average score: <strong>${avgScore}/10</strong> across 8 questions</p>
+        <p class="done-avg" style="margin-top:8px">Average score: <strong>${avgScore}/10</strong> across ${state.questions.length} questions</p>
       </div>
 
       ${competencyItems ? `
@@ -552,6 +552,76 @@ function renderSimHolisticReviewCard() {
           <p>${escHtml(r.coaching_focus)}</p>
         </div>
       ` : ""}
+
+      ${state.sessionType === "intense" ? (() => {
+        const failed = state.analyses
+          .map((a, i) => a && a.status === "failed" ? `Q${i + 1}: ${a.error || "unknown error"}` : null)
+          .filter(Boolean);
+        return failed.length ? `
+          <div class="intense-errors-box">
+            <div class="intense-errors-title">⚠ ${failed.length} answer${failed.length > 1 ? "s" : ""} could not be analysed</div>
+            ${failed.map(e => `<div class="intense-error-item">${escHtml(e)}</div>`).join("")}
+          </div>
+        ` : "";
+      })() : ""}
+
+      ${state.sessionType === "intense" ? (() => {
+        const isTechnical = state.interviewMode === "technical";
+        return state.questions.map((qObj, i) => {
+          const q = qObj.text || "";
+          const answer = state.answers[i] || {};
+          const r = answer.result || {};
+          const rawLabel = (r.formality_label || "Neutral").toLowerCase();
+          const formalityLabel = ["informal", "neutral", "professional"].includes(rawLabel) ? rawLabel : "neutral";
+          const star = r.star_coverage || {};
+
+          const starMini = isTechnical ? `
+            <div class="star-items" style="margin-left:auto">
+              ${starItem("S", star.situation)}
+              ${starItem("T", star.task)}
+              ${starItem("A", star.action)}
+              ${starItem("R", star.result)}
+            </div>` : "";
+
+          return `
+            <div class="summary-section">
+              <div class="summary-q-header">
+                <span class="summary-q-num">Q${i + 1}</span>
+                <span class="summary-q-text">${escHtml(q)}</span>
+              </div>
+
+              ${r.overall_score != null ? `
+                <div class="scores-grid">
+                  ${scoreCard("Overall", r.overall_score, r.overall_why)}
+                  ${scoreCard("Relevance", r.relevance_score, r.relevance_why)}
+                  ${scoreCard("Specificity", r.specificity_score, r.specificity_why)}
+                  ${scoreCard("Formality", r.formality_score, r.formality_why)}
+                  ${fillerCard(r.filler_words ?? 0)}
+                </div>
+                <div class="summary-row-inline">
+                  <span class="formality-badge ${formalityLabel}">${escHtml(r.formality_label || "Neutral")}</span>
+                  <span class="formality-notes">${escHtml(r.formality_notes || "")}</span>
+                  ${starMini}
+                </div>
+              ` : `<p style="color:var(--muted);font-size:13px;padding:8px 0">Analysis unavailable${answer.error ? ': ' + escHtml(answer.error) : ''}</p>`}
+
+              ${answer.transcript ? `
+                <div class="summary-transcript">
+                  <div class="transcript-label">Your Answer</div>
+                  <p>${highlightTranscript(answer.transcript)}</p>
+                </div>
+              ` : ""}
+
+              ${r.feedback ? `
+                <div class="summary-feedback">
+                  <div class="transcript-label">Feedback</div>
+                  <p>${escHtml(r.feedback)}</p>
+                </div>
+              ` : ""}
+            </div>
+          `;
+        }).join("");
+      })() : ""}
 
       <div class="results-actions">
         <button class="btn secondary" data-action="restart">Start Over</button>
@@ -606,12 +676,14 @@ function escHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
-function setCard(html) {
+function setCard(html, skipAnimation = false) {
   const container = document.getElementById("card-container");
   container.innerHTML = html;
-  container.classList.remove("fade-in");
-  void container.offsetWidth;
-  container.classList.add("fade-in");
+  if (!skipAnimation) {
+    container.classList.remove("fade-in");
+    void container.offsetWidth;
+    container.classList.add("fade-in");
+  }
 }
 
 function formatTime(s) {
@@ -716,6 +788,20 @@ async function stopAndTranscribe() {
 // ── Intense Mode ─────────────────────────────────────────────────────────────
 
 // TTS helpers
+function abortIntenseRun() {
+  state.simulationRunId = null;
+  cancelSpeech();
+  stopTimer();
+  const { mediaRecorder, stream } = state.recorder;
+  // Detach onstop so if the recorder stop event fires, nothing advances
+  if (mediaRecorder) mediaRecorder.onstop = null;
+  if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  state.recorder.mediaRecorder = null;
+  state.recorder.stream = null;
+  state.recorder.chunks = [];
+}
+
 function speakText(text) {
   return new Promise(resolve => {
     if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
@@ -762,9 +848,10 @@ async function startRecordingIntense(idx, runId) {
     state.recorder.stream = stream;
     state.recorder.mediaRecorder = mr;
     state.recorder.chunks = [];
-    mr.ondataavailable = e => { if (e.data.size > 0) state.recorder.chunks.push(e.data); };
+    const localChunks = [];
+    mr.ondataavailable = e => { if (e.data.size > 0) localChunks.push(e.data); };
     mr.onstop = () => {
-      if (state.simulationRunId === runId) stopAndTranscribeIntense(idx, runId);
+      if (state.simulationRunId === runId) stopAndTranscribeIntense(idx, runId, localChunks);
     };
     mr.onerror = () => { stopTimer(); };
     mr.start();
@@ -789,72 +876,21 @@ async function startRecordingIntense(idx, runId) {
   }
 }
 
-// Called when user clicks Stop in intense mode — fires background analysis + advances immediately
-function stopAndTranscribeIntense(idx, runId) {
+// Called inside mr.onstop — audio is fully flushed at this point.
+// Stops the mic stream, stores the blob, then advances to the next question.
+function stopAndTranscribeIntense(idx, runId, localChunks) {
   if (state.simulationRunId !== runId) return;
-  const chunks = state.recorder.chunks;
-  const blob = chunks.length ? new Blob(chunks, { type: "audio/webm" }) : null;
+
+  // Stop tracks here, not in intenseStop — onstop guarantees the buffer is flushed first
+  const { stream } = state.recorder;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+
+  const blob = localChunks && localChunks.length ? new Blob(localChunks, { type: "audio/webm" }) : null;
+  console.log(`[Intense] Q${idx + 1} blob: ${blob ? blob.size + ' bytes, ' + localChunks.length + ' chunks' : 'null'}`);
   const answers = [...state.answers];
   answers[idx] = { ...(answers[idx] || {}), audioBlob: blob };
   state.answers = answers;
-
-  if (blob && blob.size > 0) {
-    startBackgroundAnalysis(idx, runId);
-  } else {
-    // Mark as error so finalizeIntense doesn't hang
-    const analyses = [...state.analyses];
-    analyses[idx] = { status: "failed", promise: Promise.resolve(), result: null, error: "No audio captured" };
-    state.analyses = analyses;
-  }
-
   advanceIntense(idx, runId);
-}
-
-// Runs transcription + analysis in the background; stores result in state.analyses[idx]
-function startBackgroundAnalysis(idx, runId) {
-  const answer = state.answers[idx] || {};
-  const blob = answer.audioBlob;
-  const q = state.questions[idx] || {};
-
-  const promise = (async () => {
-    if (!blob || blob.size === 0) throw new Error("No audio captured");
-    const formData = new FormData();
-    formData.append("audio", blob, "recording.webm");
-    formData.append("question_obj", JSON.stringify({
-      phase: q.phase,
-      question: q.text,
-      framing: q.framing,
-      competency: q.competency,
-      evaluation_mode: q.evaluationMode
-    }));
-    formData.append("interview_mode", state.interviewMode);
-
-    return await requestJson(`${API}/transcribe/analyze-simulation`, {
-      method: "POST",
-      body: formData
-    });
-  })();
-
-  // Mark as pending immediately
-  const analyses = [...state.analyses];
-  analyses[idx] = { status: "pending", promise, result: null, error: null };
-  state.analyses = analyses;
-
-  // Update status when promise settles (non-blocking)
-  promise.then(result => {
-    if (state.simulationRunId !== runId) return;
-    const updated = [...state.analyses];
-    updated[idx] = { status: "success", promise, result, error: null };
-    state.analyses = updated;
-    // Refresh finalizing card if we're already there
-    if (state.phase === "intense_finalizing") render();
-  }).catch(err => {
-    if (state.simulationRunId !== runId) return;
-    const updated = [...state.analyses];
-    updated[idx] = { status: "failed", promise, result: null, error: err.message };
-    state.analyses = updated;
-    if (state.phase === "intense_finalizing") render();
-  });
 }
 
 // Move to next question or begin finalising
@@ -869,17 +905,70 @@ function advanceIntense(idx, runId) {
   }
 }
 
-// Wait for all background analyses, then call /simulation-review
+// Process all recorded answers sequentially, then call /simulation-review.
+// Sequential = one Whisper + one Ollama call at a time — reliable, no GPU contention.
 async function finalizeIntense(runId) {
   if (state.simulationRunId !== runId) return;
 
-  // Wait for every background promise to settle
-  const promises = state.analyses.map(a => (a && a.promise) ? a.promise : Promise.resolve());
-  await Promise.allSettled(promises);
+  // Reset all analyses to null so the card shows them as grey initially
+  state.analyses = state.questions.map(() => null);
+  render();
+
+  for (let i = 0; i < state.questions.length; i++) {
+    if (state.simulationRunId !== runId) return;
+
+    const answer = state.answers[i] || {};
+    const blob = answer.audioBlob || null;
+    const q = state.questions[i] || {};
+
+    // Mark as processing and re-render so the dot goes amber
+    const analyses = [...state.analyses];
+    analyses[i] = { status: "pending", result: null, error: null };
+    state.analyses = analyses;
+    render();
+
+    if (!blob || blob.size === 0) {
+      const analyses = [...state.analyses];
+      analyses[i] = { status: "failed", result: null, error: "No audio captured" };
+      state.analyses = analyses;
+      render();
+      continue;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append("audio", blob, "recording.webm");
+      formData.append("question_obj", JSON.stringify({
+        phase: q.phase,
+        question: q.text,
+        framing: q.framing,
+        competency: q.competency,
+        evaluation_mode: q.evaluationMode
+      }));
+      formData.append("interview_mode", state.interviewMode);
+
+      const data = await requestJson(`${API}/transcribe/analyze-simulation`, {
+        method: "POST",
+        body: formData
+      });
+
+      console.log(`[Intense] Q${i + 1} done — "${data.transcript?.slice(0, 60)}..."`);
+      const analyses = [...state.analyses];
+      analyses[i] = { status: "success", result: data, error: null };
+      state.analyses = analyses;
+      render();
+    } catch (e) {
+      console.error(`[Intense] Q${i + 1} failed:`, e.message);
+      const analyses = [...state.analyses];
+      analyses[i] = { status: "failed", result: null, error: e.message };
+      state.analyses = analyses;
+      render();
+    }
+  }
 
   if (state.simulationRunId !== runId) return;
 
-  // Populate state.answers for compatibility with renderSimHolisticReviewCard
+  // Populate state.answers for renderSimHolisticReviewCard compatibility
   const answers = state.questions.map((_, i) => {
     const a = state.analyses[i] || {};
     const existing = state.answers[i] || {};
@@ -931,20 +1020,73 @@ function renderIntenseQuestionCard() {
   const isRecording = phase === "intense_recording";
   const interviewer = state.interviewer || {};
   const interviewerLabel = [interviewer.name, interviewer.role].filter(Boolean).join(" - ") || "Interviewer";
-  const pendingCount = state.analyses.filter(a => a && a.status === "pending").length;
 
-  const dots = state.questions.map((_, i) => {
+  const dotsHtml = state.questions.map((_, i) => {
     const a = state.analyses[i];
     let cls = "intense-dot";
-    if (!a)                       cls += " intense-dot--pending";
+    if (!a)                          cls += " intense-dot--pending";
     else if (a.status === "pending") cls += " intense-dot--running";
     else if (a.status === "success") cls += " intense-dot--done";
     else if (a.status === "failed")  cls += " intense-dot--error";
     else                             cls += " intense-dot--pending";
-    if (i === idx)                cls += " intense-dot--current";
+    if (i === idx)                   cls += " intense-dot--current";
     return `<div class="${cls}" title="Q${i + 1}"></div>`;
   }).join("");
 
+  const container = document.getElementById("card-container");
+  const existing = container.querySelector(".intense-card");
+
+  if (existing) {
+    // In-place update — no DOM replacement, no repaint flash
+    const dotsEl = existing.querySelector(".intense-dots");
+    if (dotsEl) dotsEl.innerHTML = dotsHtml;
+
+    const progressEl = existing.querySelector(".intense-progress");
+    if (progressEl) progressEl.textContent = `Q${idx + 1} of ${total}`;
+
+    const qBox = existing.querySelector(".question-box");
+    if (qBox) qBox.textContent = qObj.text || "";
+
+    // Toggle TTS speaking indicator
+    let ttsEl = existing.querySelector(".tts-speaking");
+    if (!isRecording && !ttsEl) {
+      const div = document.createElement("div");
+      div.className = "intense-status tts-speaking";
+      div.innerHTML = `<span class="tts-pulse"></span> Interviewer speaking...`;
+      const header = existing.querySelector(".intense-header");
+      if (header) header.insertAdjacentElement("afterend", div);
+    } else if (isRecording && ttsEl) {
+      ttsEl.remove();
+    }
+
+    // Toggle recording vs waiting state
+    let recState = existing.querySelector(".intense-recording-state");
+    let waitState = existing.querySelector(".intense-waiting-state");
+
+    if (isRecording && !recState) {
+      if (waitState) waitState.remove();
+      const div = document.createElement("div");
+      div.className = "intense-recording-state";
+      div.innerHTML = `
+        <div class="intense-status">Listening...</div>
+        <div class="record-controls">
+          <button class="btn record recording intense-stop-btn" data-action="intenseStop">Stop</button>
+          <div class="timer" id="timer">${formatTime(state.recorder.seconds)}</div>
+        </div>
+        <p class="intense-status">Answer recorded — analysis runs after the interview.</p>
+      `;
+      existing.appendChild(div);
+    } else if (!isRecording && !waitState) {
+      if (recState) recState.remove();
+      const div = document.createElement("div");
+      div.className = "intense-waiting-state";
+      div.innerHTML = `<p class="intense-status">Recording starts automatically when speaking finishes.</p>`;
+      existing.appendChild(div);
+    }
+    return;
+  }
+
+  // First render — full card, with animation
   setCard(`
     <div class="card intense-card">
       <div class="intense-interviewer">${escHtml(interviewerLabel)}</div>
@@ -953,7 +1095,7 @@ function renderIntenseQuestionCard() {
         <span class="intense-progress">Q${idx + 1} of ${total}</span>
       </div>
 
-      <div class="intense-dots">${dots}</div>
+      <div class="intense-dots">${dotsHtml}</div>
 
       ${!isRecording ? `
         <div class="intense-status tts-speaking">
@@ -970,7 +1112,7 @@ function renderIntenseQuestionCard() {
             <button class="btn record recording intense-stop-btn" data-action="intenseStop">Stop</button>
             <div class="timer" id="timer">${formatTime(state.recorder.seconds)}</div>
           </div>
-          <p class="intense-status">Processing ${pendingCount} question${pendingCount === 1 ? "" : "s"} in background...</p>
+          <p class="intense-status">Answer recorded — analysis runs after the interview.</p>
         </div>
       ` : `
         <div class="intense-waiting-state">
@@ -983,8 +1125,9 @@ function renderIntenseQuestionCard() {
 
 // ── Card: Intense Mode finalising ─────────────────────────────────────────────
 function renderIntenseFinalizingCard() {
-  const total = state.questions.length;
-  const done  = state.analyses.filter(a => a && (a.status === "success" || a.status === "failed")).length;
+  const total   = state.questions.length;
+  const done    = state.analyses.filter(a => a && (a.status === "success" || a.status === "failed")).length;
+  const current = state.analyses.findIndex(a => a && a.status === "pending");
 
   const dots = state.questions.map((_, i) => {
     const a = state.analyses[i];
@@ -997,13 +1140,18 @@ function renderIntenseFinalizingCard() {
     return `<div class="${cls}" title="Q${i + 1}"></div>`;
   }).join("");
 
+  const statusLine = current >= 0
+    ? `Transcribing &amp; analysing Q${current + 1} of ${total}...`
+    : done < total
+      ? `Finishing up...`
+      : `Compiling your holistic review...`;
+
   setCard(`
     <div class="card">
-      <h2>Reviewing your performance...</h2>
-      <p class="intense-finalizing-progress">${done} of ${total} complete</p>
-      <div class="intense-dots" style="margin-bottom:20px">${dots}</div>
-      <p class="sim-loading-text">Compiling your holistic review.</p>
-      <div class="status"><span class="spinner"></span> This may take 30–45 seconds</div>
+      <h2>Processing your answers</h2>
+      <div class="intense-dots" style="margin:20px 0">${dots}</div>
+      <p class="sim-loading-text">${statusLine}</p>
+      <div class="status"><span class="spinner"></span> Each answer takes ~20–30 s — ${done} of ${total} done</div>
     </div>
   `);
 }
@@ -1266,15 +1414,12 @@ const actions = {
   download: () => window.print(),
 
   restart: () => {
-    cancelSpeech();
-    stopRecording();
+    abortIntenseRun();
     window.location.reload();
   },
 
   shutdown: async () => {
-    if (!confirm("Stop the InterviewAI backend now?")) return;
-    cancelSpeech();
-    stopRecording();
+    abortIntenseRun();
     setCard(`
       <div class="card">
         <h2>InterviewAI Stopped</h2>
@@ -1363,9 +1508,11 @@ const actions = {
 
   intenseStop: () => {
     stopTimer();
-    const { mediaRecorder, stream } = state.recorder;
+    const { mediaRecorder } = state.recorder;
+    // Do NOT stop stream tracks here — stopping them synchronously before onstop fires
+    // causes the MediaRecorder to flush an empty/header-only WebM blob.
+    // Stream tracks are stopped inside stopAndTranscribeIntense after onstop fires.
     if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
-    if (stream) stream.getTracks().forEach(t => t.stop());
   },
 
   deleteCv: async () => {

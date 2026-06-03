@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 import whisper_handler
 import ollama_handler
@@ -229,7 +230,9 @@ async def generate_simulation_ep(req: SimulationRequest):
 async def transcribe(audio: UploadFile = File(...)):
     try:
         audio_bytes = await audio.read()
-        transcript = whisper_handler.transcribe(audio_bytes)
+        # run_in_threadpool frees the event loop while Whisper runs;
+        # the threading.Lock in whisper_handler serialises concurrent GPU calls.
+        transcript = await run_in_threadpool(whisper_handler.transcribe, audio_bytes)
         return {"transcript": transcript}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -256,7 +259,7 @@ async def transcribe_analyze_simulation_ep(
 ):
     try:
         audio_bytes = await audio.read()
-        transcript = whisper_handler.transcribe(audio_bytes).strip()
+        transcript = (await run_in_threadpool(whisper_handler.transcribe, audio_bytes)).strip()
         if not transcript:
             raise HTTPException(status_code=400, detail="No speech detected")
 
