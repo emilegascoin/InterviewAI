@@ -33,6 +33,8 @@ SIMULATION_FALLBACK_CLOSING = {
     "evaluation_mode": "closing_question",
 }
 
+MIN_ANSWER_WORDS = 5  # Fewer than this → skip Ollama, return hardcoded low scores
+
 FILLER_PATTERN = re.compile(
     r"\b(um+|uh+|like|you know|sort of|kind of|basically|whatever|stuff|"
     r"i guess|i mean|okay|alright|right)\b",
@@ -42,6 +44,33 @@ FILLER_PATTERN = re.compile(
 
 def count_fillers(text: str) -> int:
     return len(FILLER_PATTERN.findall(text))
+
+
+def insufficient_answer_result(filler_count: int, is_closing: bool = False) -> dict:
+    """Return a hardcoded low-score result when the answer is too short to evaluate."""
+    return {
+        "formality_score": 1,
+        "formality_label": "Informal",
+        "formality_notes": "No substantive answer provided.",
+        "formality_why": "Answer was too short to evaluate.",
+        "specificity_score": 1,
+        "specificity_why": "Answer was too short to evaluate.",
+        "relevance_score": 1,
+        "relevance_why": "No meaningful answer given to the question.",
+        "star_coverage": {"situation": False, "task": False, "action": False, "result": False},
+        "filler_words": filler_count,
+        "overall_score": 1,
+        "overall_why": "No substantive answer was provided.",
+        "feedback": (
+            "No meaningful answer was recorded — the transcript was too short to analyse. "
+            "Make sure your microphone is working and speak a full answer before stopping. "
+            "Try again with a complete response."
+        ),
+        "sample_response": (
+            "Record a full answer to see a sample response." if not is_closing else
+            "Ask a specific, role-relevant question to see an example."
+        ),
+    }
 
 
 def looks_like_closing_question(text: str) -> bool:
@@ -258,6 +287,9 @@ async def analyze_simulation_response(
     if evaluation_mode == "closing_question":
         filler_count = count_fillers(transcript)
 
+        if len(transcript.split()) < MIN_ANSWER_WORDS:
+            return insufficient_answer_result(filler_count, is_closing=True)
+
         prompt = f"""You are a senior interviewer and career coach with 15 years of hiring experience. The interviewer asked a closing prompt, and the candidate responded by asking the interviewer a question. Evaluate the quality of the candidate's question.
 
 Interviewer's closing prompt:
@@ -434,6 +466,12 @@ async def analyze_response(
 ) -> dict:
 
     filler_count = count_fillers(transcript)
+
+    # Guard: don't waste an Ollama call on a non-answer — model tends to hallucinate
+    # plausible context and score "You" at 7/10 rather than 1/10.
+    if len(transcript.split()) < MIN_ANSWER_WORDS:
+        return insufficient_answer_result(filler_count)
+
     mode_label = "screening" if interview_mode == "screening" else "technical"
 
     if interview_mode == "screening":
