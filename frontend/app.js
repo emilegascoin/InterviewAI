@@ -188,6 +188,18 @@ function renderJdCard() {
     </div>
   `);
 
+  // Restore saved JD
+  const textarea = document.getElementById("jd-input");
+  if (textarea && state.jobDescription) textarea.value = state.jobDescription;
+
+  // Save JD to localStorage on every keystroke
+  if (textarea) {
+    textarea.addEventListener("input", () => {
+      state.jobDescription = textarea.value;
+      localStorage.setItem("interviewai_jd", textarea.value);
+    });
+  }
+
   // Wire up file input (not caught by delegation since it's a change event)
   const fileInput = document.getElementById("cv-file-input");
   if (fileInput) {
@@ -1660,6 +1672,9 @@ document.getElementById("card-container").addEventListener("change", async e => 
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 async function boot() {
+  const savedJd = localStorage.getItem("interviewai_jd");
+  if (savedJd) state.jobDescription = savedJd;
+
   try {
     const [settings, cvStatus] = await Promise.all([
       requestJson(`${API}/settings`).catch(() => ({})),
