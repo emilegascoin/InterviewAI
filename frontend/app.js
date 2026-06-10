@@ -1005,7 +1005,7 @@ async function deliverQuestion(qIdx, runId) {
   const sIdx = getSectionForQuestion(qIdx);
   if (sIdx >= 0) state.intense.sections[sIdx].status = 'active';
 
-  devLog('Q' + (qIdx+1) + ' [' + (state.intense.sections[sIdx]?.label || '?') + '] TTS: ' + qText.slice(0, 60), 'info');
+  devLog('Q' + (qIdx+1) + ' [' + (state.intense.sections[sIdx]?.label || '?') + ']\nFraming: ' + (framing || '(none)') + '\nQuestion: ' + qText, 'info');
   setState({ phase: 'intense_question', currentIndex: qIdx, questionVisible: false });
   await speakText(framing + qText);
   if (state.simulationRunId !== runId || state.intense.activeExchangeId !== exchangeId) return;
@@ -1144,7 +1144,7 @@ async function checkFollowUp(transcript, questionText, qIdx, sIdx, runId, exchan
 
     if (state.simulationRunId !== runId || state.intense.activeExchangeId !== exchangeId) return;
 
-    devLog('Q' + (qIdx+1) + ' follow-up decision in ' + ((Date.now()-_fupT0)/1000).toFixed(1) + 's: ' + data.decision + ' — "' + (data.text||'').slice(0,60) + '"', 'result');
+    devLog('Q' + (qIdx+1) + ' follow-up decision in ' + ((Date.now()-_fupT0)/1000).toFixed(1) + 's: ' + data.decision + '\nText: ' + (data.text||'') + (data._prompt ? '\n\n--- PROMPT ---\n' + data._prompt : ''), 'result');
 
     if (data.decision === 'follow_up' && data.text) {
       section.followUpCount++;
@@ -1227,7 +1227,7 @@ async function advanceIntense(qIdx, sIdx, runId) {
     };
     state.questions = questions;
 
-    devLog('Q' + (nextQIdx+1) + ' generated: ' + data.question.slice(0, 60), 'result');
+    devLog('Q' + (nextQIdx+1) + ' generated\nFraming: ' + (data.framing||'') + '\nQuestion: ' + data.question + (data._prompt ? '\n\n--- PROMPT ---\n' + data._prompt : ''), 'result');
     deliverQuestion(nextQIdx, runId);
   } catch (e) {
     devLog('generate-next-question failed: ' + e.message, 'error');

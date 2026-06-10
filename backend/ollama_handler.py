@@ -459,6 +459,7 @@ async def check_follow_up(
         result["decision"] = "advance"
     if not result.get("text"):
         result["text"] = "Let us move on."
+    result["_prompt"] = prompt
     return result
 
 
@@ -942,4 +943,5 @@ Return ONLY valid JSON. No markdown, no commentary. Use double quotes.
         if key not in data:
             raise ValueError(f"Missing key in response: {key}")
 
+    data["_prompt"] = prompt
     return data
