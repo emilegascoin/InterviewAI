@@ -175,7 +175,6 @@ async def upload_cover_letter(file: UploadFile = File(...)):
             summary = await cover_letter_handler.summarise_cover_letter(text)
             cover_letter_handler.save_cover_letter_summary(summary)
         except Exception:
-            cover_letter_handler.delete_cover_letter()
             raise HTTPException(
                 status_code=503,
                 detail="Cover letter uploaded but summarisation failed — is Ollama running?",

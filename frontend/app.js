@@ -984,9 +984,7 @@ function buildConversationHistory() {
   const history = [];
   for (const section of (state.intense.sections || [])) {
     for (const ex of (section.exchanges || [])) {
-      if (ex.kind === 'original') {
-        history.push({ question: ex.question, answer: ex.answer });
-      }
+      history.push({ question: ex.question, answer: ex.answer });
     }
   }
   return history;
@@ -1108,7 +1106,7 @@ async function checkFollowUp(transcript, questionText, qIdx, sIdx, runId, exchan
   const section = state.intense.sections[sIdx];
   const followUpCount = section.followUpCount;
 
-  if (kind === 'follow_up' || followUpCount >= 2 || section.id === 'closing') {
+  if (kind === 'follow_up' || followUpCount >= 6 || section.id === 'closing') {
     devLog('Q' + (qIdx+1) + ' skipping follow-up check (kind=' + kind + ' followUpCount=' + followUpCount + ' section=' + section.id + ')', 'info');
     advanceIntense(qIdx, sIdx, runId);
     return;
