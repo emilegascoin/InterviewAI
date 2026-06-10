@@ -20,6 +20,9 @@ AGENTS.md
 # Desktop shortcuts
 *.lnk
 
+# TTS voice models (large binary files, auto-downloaded on first run)
+backend/voices/
+
 # OS
 .DS_Store
 Thumbs.db

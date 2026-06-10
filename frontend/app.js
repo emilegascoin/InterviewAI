@@ -876,25 +876,63 @@ function abortIntenseRun() {
   state.recorder.chunks = [];
 }
 
-function speakText(text) {
-  return new Promise(resolve => {
-    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
-      resolve();
-      return;
-    }
+let _currentAudio = null;
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.95;
-    utterance.pitch = 1;
-    utterance.volume = 1;
-    utterance.onend = resolve;
-    utterance.onerror = resolve;
-    window.speechSynthesis.speak(utterance);
+function speakText(text) {
+  return new Promise(async resolve => {
+    // Cancel any in-progress speech
+    cancelSpeech();
+
+    try {
+      const resp = await fetch('/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!resp.ok) throw new Error(`TTS endpoint returned ${resp.status}`);
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      _currentAudio = audio;
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        _currentAudio = null;
+        resolve();
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        _currentAudio = null;
+        resolve();
+      };
+      audio.play().catch(() => {
+        URL.revokeObjectURL(url);
+        _currentAudio = null;
+        resolve();
+      });
+    } catch (err) {
+      // Fallback to Web Speech API if /tts is unavailable
+      console.warn('[speakText] Piper TTS failed, falling back to Web Speech API:', err);
+      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+        resolve();
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.95;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      utterance.onend = resolve;
+      utterance.onerror = resolve;
+      window.speechSynthesis.speak(utterance);
+    }
   });
 }
 
 function cancelSpeech() {
+  if (_currentAudio) {
+    _currentAudio.pause();
+    _currentAudio = null;
+  }
   if (window.speechSynthesis) window.speechSynthesis.cancel();
 }
 

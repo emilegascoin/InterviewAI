@@ -7,6 +7,7 @@ from pydantic import BaseModel
 import whisper_handler
 import ollama_handler
 import cv_handler
+import tts_handler
 import os
 import json
 import subprocess
@@ -372,5 +373,20 @@ async def intense_review_ep(req: IntenseReviewRequest):
             sections=req.sections,
         )
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── TTS ───────────────────────────────────────────────────────────────────────
+class TtsRequest(BaseModel):
+    text: str
+
+
+@app.post("/tts")
+async def tts_ep(req: TtsRequest):
+    try:
+        wav_bytes = await run_in_threadpool(tts_handler.synthesize, req.text)
+        from fastapi.responses import Response
+        return Response(content=wav_bytes, media_type="audio/wav")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

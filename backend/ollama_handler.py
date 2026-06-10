@@ -259,7 +259,7 @@ Return ONLY valid JSON. No markdown, no commentary. Use double quotes. Return th
     {{
       "phase": "intro|background|behavioral|technical|closing",
       "question": "The actual question text",
-      "framing": "One sentence the interviewer says before asking - must reference something specific from the JD",
+      "framing": "One short conversational sentence (max 10 words) that pivots the interview to this topic — must NOT preview or restate the question content. Good: 'Let me shift gears here.' or 'Good, thank you for that.' Bad: 'I want to explore your Python experience.' (because the question already asks that)",
       "competency": "e.g. communication / technical_depth / ownership / problem_solving / motivation",
       "evaluation_mode": "screening|star|technical|closing_question"
     }}
