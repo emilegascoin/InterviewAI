@@ -171,6 +171,15 @@ async def upload_cover_letter(file: UploadFile = File(...)):
         if not text.strip():
             raise HTTPException(status_code=400, detail="Could not extract text from file.")
         meta = cover_letter_handler.save_cover_letter(text, file.filename)
+        try:
+            summary = await cover_letter_handler.summarise_cover_letter(text)
+            cover_letter_handler.save_cover_letter_summary(summary)
+        except Exception:
+            cover_letter_handler.delete_cover_letter()
+            raise HTTPException(
+                status_code=503,
+                detail="Cover letter uploaded but summarisation failed — is Ollama running?",
+            )
         return {"loaded": True, **meta}
     except HTTPException:
         raise
@@ -247,6 +256,16 @@ class FollowUpCheckRequest(BaseModel):
     interviewer_persona: str | None = None
 
 
+class NextQuestionRequest(BaseModel):
+    job_description: str
+    question_number: int
+    total_questions: int = 8
+    use_cv: bool = False
+    use_cover_letter: bool = False
+    interviewer_persona: str | None = None
+    conversation_history: list = []
+
+
 class SectionAnalyzeRequest(BaseModel):
     job_description: str
     interview_mode: str = "technical"
@@ -269,7 +288,7 @@ async def generate_questions(req: JobDescRequest):
             cv_summary = cv_handler.get_cv_summary()
         cover_letter = None
         if req.use_cover_letter:
-            cover_letter = cover_letter_handler.get_cover_letter_text()
+            cover_letter = cover_letter_handler.get_cover_letter_summary()
         questions = await ollama_handler.generate_questions(
             req.job_description,
             req.interview_mode,
@@ -290,13 +309,36 @@ async def generate_simulation_ep(req: SimulationRequest):
             cv_summary = cv_handler.get_cv_summary()
         cover_letter = None
         if req.use_cover_letter:
-            cover_letter = cover_letter_handler.get_cover_letter_text()
+            cover_letter = cover_letter_handler.get_cover_letter_summary()
         result = await ollama_handler.generate_simulation(
             req.job_description,
             req.interview_mode,
             cv_summary,
             cover_letter,
             req.interviewer_persona,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate-next-question")
+async def generate_next_question_ep(req: NextQuestionRequest):
+    try:
+        cv_summary = None
+        if req.use_cv:
+            cv_summary = cv_handler.get_cv_summary()
+        cover_letter_summary = None
+        if req.use_cover_letter:
+            cover_letter_summary = cover_letter_handler.get_cover_letter_summary()
+        result = await ollama_handler.generate_next_question(
+            job_description=req.job_description,
+            question_number=req.question_number,
+            total_questions=req.total_questions,
+            cv_summary=cv_summary,
+            cover_letter_summary=cover_letter_summary,
+            interviewer_persona=req.interviewer_persona,
+            conversation_history=req.conversation_history,
         )
         return result
     except Exception as e:

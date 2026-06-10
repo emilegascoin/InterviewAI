@@ -136,7 +136,6 @@ function render() {
 
 // ── Card: Job Description ─────────────────────────────────────────────────────
 function renderJdCard() {
-  const isScreening = state.interviewMode === "screening";
   const cvLoaded = state.cvLoaded;
   const useCvDisabled = !cvLoaded ? "disabled" : "";
   const useCvChecked = cvLoaded && state.useCv ? "checked" : "";
@@ -175,14 +174,6 @@ function renderJdCard() {
       <div class="persona-row">
         <span class="mode-toggle-label">Interviewer Persona</span>
         <textarea id="persona-input" class="persona-input" placeholder="Interviewer persona (optional) — e.g. 'Be an aggressive interviewer who focuses on system design' or 'Second round — background covered, go deep on technical skills'"></textarea>
-      </div>
-
-      <div class="mode-toggle-row">
-        <span class="mode-toggle-label">Interview Type</span>
-        <div class="mode-toggle">
-          <button class="mode-btn${isScreening ? " active" : ""}" data-action="setMode" data-mode="screening">Screening</button>
-          <button class="mode-btn${!isScreening ? " active" : ""}" data-action="setMode" data-mode="technical">Technical</button>
-        </div>
       </div>
 
       <div class="cv-row">
@@ -989,6 +980,18 @@ function initIntenseSections() {
   }));
 }
 
+function buildConversationHistory() {
+  const history = [];
+  for (const section of (state.intense.sections || [])) {
+    for (const ex of (section.exchanges || [])) {
+      if (ex.kind === 'original') {
+        history.push({ question: ex.question, answer: ex.answer });
+      }
+    }
+  }
+  return history;
+}
+
 async function deliverQuestion(qIdx, runId) {
   if (state.simulationRunId !== runId) return;
   const exchangeId = Date.now() + '-' + Math.random();
@@ -1163,7 +1166,7 @@ async function checkFollowUp(transcript, questionText, qIdx, sIdx, runId, exchan
   }
 }
 
-function advanceIntense(qIdx, sIdx, runId) {
+async function advanceIntense(qIdx, sIdx, runId) {
   if (state.simulationRunId !== runId) return;
 
   const section = state.intense.sections[sIdx];
@@ -1173,20 +1176,61 @@ function advanceIntense(qIdx, sIdx, runId) {
     ? questionIndices[posInSection + 1]
     : null;
 
+  let nextQIdx = null;
   if (nextQIdxInSection !== null) {
-    devLog('advance → Q' + (nextQIdxInSection+1) + ' (same section: ' + section.label + ')', 'info');
-    deliverQuestion(nextQIdxInSection, runId);
-    return;
+    nextQIdx = nextQIdxInSection;
+    devLog('advance → Q' + (nextQIdx+1) + ' (same section: ' + section.label + ')', 'info');
+  } else {
+    section.status = 'complete';
+    const nextSIdx = sIdx + 1;
+    if (nextSIdx < SECTIONS.length) {
+      nextQIdx = state.intense.sections[nextSIdx].questionIndices[0];
+      devLog('section complete: ' + section.label + ' → ' + state.intense.sections[nextSIdx].label, 'phase');
+    } else {
+      devLog('all sections done — finalizing', 'phase');
+      setState({ phase: 'intense_finalizing' });
+      finalizeIntense(runId);
+      return;
+    }
   }
 
-  section.status = 'complete';
-  const nextSIdx = sIdx + 1;
-  if (nextSIdx < SECTIONS.length) {
-    const nextSection = state.intense.sections[nextSIdx];
-    devLog('section complete: ' + section.label + ' → ' + nextSection.label, 'phase');
-    deliverQuestion(nextSection.questionIndices[0], runId);
-  } else {
-    devLog('all sections done — finalizing', 'phase');
+  if (state.simulationRunId !== runId) return;
+
+  // Generate next question dynamically
+  try {
+    devLog('generating Q' + (nextQIdx+1) + ' via /generate-next-question...', 'api');
+    const history = buildConversationHistory();
+    const data = await requestJson(`${API}/generate-next-question`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job_description: state.jobDescription,
+        question_number: nextQIdx + 1,
+        total_questions: 8,
+        use_cv: state.useCv && state.cvLoaded,
+        use_cover_letter: state.coverLetterLoaded,
+        interviewer_persona: state.interviewerPersona.trim() || null,
+        conversation_history: history,
+      })
+    });
+
+    if (state.simulationRunId !== runId) return;
+
+    const questions = [...state.questions];
+    questions[nextQIdx] = {
+      text: data.question,
+      phase: data.phase,
+      framing: data.framing,
+      competency: data.competency,
+      evaluationMode: data.evaluation_mode,
+    };
+    state.questions = questions;
+
+    devLog('Q' + (nextQIdx+1) + ' generated: ' + data.question.slice(0, 60), 'result');
+    deliverQuestion(nextQIdx, runId);
+  } catch (e) {
+    devLog('generate-next-question failed: ' + e.message, 'error');
+    if (state.simulationRunId !== runId) return;
     setState({ phase: 'intense_finalizing' });
     finalizeIntense(runId);
   }
@@ -1729,34 +1773,36 @@ const actions = {
     });
 
     try {
-      const data = await requestJson(`${API}/generate-simulation`, {
+      // Generate first question dynamically
+      const data = await requestJson(`${API}/generate-next-question`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           job_description: jd,
-          interview_mode: state.interviewMode,
+          question_number: 1,
+          total_questions: 8,
           use_cv: state.useCv && state.cvLoaded,
           use_cover_letter: state.coverLetterLoaded,
           interviewer_persona: state.interviewerPersona.trim() || null,
+          conversation_history: [],
         })
       });
 
-      const questions = (data.questions || []).map(q => ({
-        text: q.question,
-        phase: q.phase,
-        framing: q.framing,
-        competency: q.competency,
-        evaluationMode: q.evaluation_mode
-      }));
-
-      if (!questions.length) throw new Error("No questions returned");
       if (state.simulationRunId !== runId) return;
 
-      state.questions = questions;
-      state.analyses  = questions.map(() => null);
+      // Pre-allocate 8 question slots; fill Q1 now
+      state.questions = Array(8).fill(null);
+      state.questions[0] = {
+        text: data.question,
+        phase: data.phase,
+        framing: data.framing,
+        competency: data.competency,
+        evaluationMode: data.evaluation_mode,
+      };
+      state.analyses = Array(8).fill(null);
+      state.interviewer = {};
       state.currentIndex = 0;
       state.answers = [];
-      state.interviewer = data.interviewer || {};
       initIntenseSections();
 
       deliverQuestion(0, runId);
