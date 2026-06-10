@@ -27,6 +27,33 @@ const state = {
   recorder: { mediaRecorder: null, stream: null, chunks: [], timerInterval: null, seconds: 0 }
 };
 
+// ── Dev panel ────────────────────────────────────────────────────────────────
+const _devLog = [];
+function devLog(msg, type = 'info') {
+  const now = new Date();
+  const ts = now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0');
+  _devLog.push({ ts, msg, type });
+  if (_devLog.length > 500) _devLog.shift();
+  const el = document.getElementById('dev-log');
+  if (el) {
+    const line = document.createElement('div');
+    line.className = 'dev-log-line log-' + type;
+    line.textContent = ts + '  ' + msg;
+    el.appendChild(line);
+    // Keep scrolled to bottom
+    el.scrollTop = el.scrollHeight;
+  }
+}
+function toggleDevPanel() {
+  const panel = document.getElementById('dev-panel');
+  if (panel) panel.classList.toggle('hidden');
+}
+function devClear() {
+  _devLog.length = 0;
+  const el = document.getElementById('dev-log');
+  if (el) el.innerHTML = '';
+}
+
 const SECTIONS = [
   { id: 'intro',      label: 'Introduction', questionIndices: [0] },
   { id: 'background', label: 'Background',   questionIndices: [1, 2] },
@@ -40,6 +67,7 @@ function getSectionForQuestion(qIdx) {
 }
 
 function setState(patch) {
+  if (patch.phase && patch.phase !== state.phase) devLog('phase: ' + state.phase + ' → ' + patch.phase, 'phase');
   Object.assign(state, patch);
   render();
 }
@@ -839,9 +867,11 @@ async function deliverQuestion(qIdx, runId) {
   const sIdx = getSectionForQuestion(qIdx);
   if (sIdx >= 0) state.intense.sections[sIdx].status = 'active';
 
+  devLog('Q' + (qIdx+1) + ' [' + (state.intense.sections[sIdx]?.label || '?') + '] TTS: ' + qText.slice(0, 60), 'info');
   setState({ phase: 'intense_question', currentIndex: qIdx, questionVisible: false });
   await speakText(framing + qText);
   if (state.simulationRunId !== runId || state.intense.activeExchangeId !== exchangeId) return;
+  devLog('Q' + (qIdx+1) + ' TTS done — starting recorder', 'info');
   await startRecordingIntense(qIdx, sIdx, runId, exchangeId, qText, 'original');
 }
 
@@ -866,8 +896,10 @@ async function startRecordingIntense(qIdx, sIdx, runId, exchangeId, questionText
     mr.onerror = () => { stopTimer(); };
     mr.start();
     startTimer();
+    devLog('Q' + (qIdx+1) + ' recorder started (' + kind + ')', 'info');
     setState({ phase: 'intense_recording' });
   } catch (e) {
+    devLog('Q' + (qIdx+1) + ' mic error: ' + e.message, 'error');
     if (stream) stream.getTracks().forEach(t => t.stop());
     if (qIdx === 0 && kind === 'original') {
       setState({ phase: 'jd', sessionType: 'practice' });
@@ -889,20 +921,26 @@ async function stopAndTranscribeIntense(qIdx, sIdx, runId, exchangeId, localChun
 
   const blob = localChunks && localChunks.length ? new Blob(localChunks, { type: 'audio/webm' }) : null;
 
+  devLog('Q' + (qIdx+1) + ' recorder stopped — blob: ' + (blob ? blob.size + 'b, ' + localChunks.length + ' chunks' : 'NULL'), blob && blob.size > 0 ? 'info' : 'error');
+
   if (!blob || blob.size === 0) {
+    devLog('Q' + (qIdx+1) + ' empty blob — skipping transcription', 'error');
     advanceIntense(qIdx, sIdx, runId);
     return;
   }
 
   setState({ phase: 'intense_transcribing' });
+  devLog('Q' + (qIdx+1) + ' → POST /transcribe (' + Math.round(blob.size/1024) + 'KB)...', 'api');
+  const t0 = Date.now();
   let transcript = '';
   try {
     const formData = new FormData();
     formData.append('audio', blob, 'recording.webm');
     const data = await requestJson(API + '/transcribe', { method: 'POST', body: formData });
     transcript = (data.transcript || '').trim();
+    devLog('Q' + (qIdx+1) + ' transcribed in ' + ((Date.now()-t0)/1000).toFixed(1) + 's: "' + transcript.slice(0, 80) + '"', 'result');
   } catch (e) {
-    console.error('[Intense] Transcription failed:', e.message);
+    devLog('Q' + (qIdx+1) + ' transcription error after ' + ((Date.now()-t0)/1000).toFixed(1) + 's: ' + e.message, 'error');
     advanceIntense(qIdx, sIdx, runId);
     return;
   }
@@ -926,11 +964,14 @@ async function checkFollowUp(transcript, questionText, qIdx, sIdx, runId, exchan
   const followUpCount = section.followUpCount;
 
   if (kind === 'follow_up' || followUpCount >= 2 || section.id === 'closing') {
+    devLog('Q' + (qIdx+1) + ' skipping follow-up check (kind=' + kind + ' followUpCount=' + followUpCount + ' section=' + section.id + ')', 'info');
     advanceIntense(qIdx, sIdx, runId);
     return;
   }
 
   setState({ phase: 'intense_thinking' });
+  devLog('Q' + (qIdx+1) + ' → POST /follow-up-check (followUpCount=' + followUpCount + ')...', 'api');
+  const _fupT0 = Date.now();
 
   try {
     const conversation = section.exchanges.slice(0, -1).map(ex => ({
@@ -956,6 +997,8 @@ async function checkFollowUp(transcript, questionText, qIdx, sIdx, runId, exchan
 
     if (state.simulationRunId !== runId || state.intense.activeExchangeId !== exchangeId) return;
 
+    devLog('Q' + (qIdx+1) + ' follow-up decision in ' + ((Date.now()-_fupT0)/1000).toFixed(1) + 's: ' + data.decision + ' — "' + (data.text||'').slice(0,60) + '"', 'result');
+
     if (data.decision === 'follow_up' && data.text) {
       section.followUpCount++;
       const followUpText = data.text;
@@ -972,7 +1015,7 @@ async function checkFollowUp(transcript, questionText, qIdx, sIdx, runId, exchan
       advanceIntense(qIdx, sIdx, runId);
     }
   } catch (e) {
-    console.error('[Intense] Follow-up check failed:', e.message);
+    devLog('Q' + (qIdx+1) + ' follow-up check error: ' + e.message, 'error');
     advanceIntense(qIdx, sIdx, runId);
   }
 }
@@ -988,6 +1031,7 @@ function advanceIntense(qIdx, sIdx, runId) {
     : null;
 
   if (nextQIdxInSection !== null) {
+    devLog('advance → Q' + (nextQIdxInSection+1) + ' (same section: ' + section.label + ')', 'info');
     deliverQuestion(nextQIdxInSection, runId);
     return;
   }
@@ -996,8 +1040,10 @@ function advanceIntense(qIdx, sIdx, runId) {
   const nextSIdx = sIdx + 1;
   if (nextSIdx < SECTIONS.length) {
     const nextSection = state.intense.sections[nextSIdx];
+    devLog('section complete: ' + section.label + ' → ' + nextSection.label, 'phase');
     deliverQuestion(nextSection.questionIndices[0], runId);
   } else {
+    devLog('all sections done — finalizing', 'phase');
     setState({ phase: 'intense_finalizing' });
     finalizeIntense(runId);
   }
@@ -1014,6 +1060,7 @@ async function finalizeIntense(runId) {
     const section = state.intense.sections[sIdx];
 
     if (!section.exchanges.length) {
+      devLog('section ' + section.label + ': no exchanges — skipping', 'error');
       section.status = 'failed';
       section.questionIndices.forEach(qi => {
         const analyses = [...state.analyses];
@@ -1031,6 +1078,8 @@ async function finalizeIntense(runId) {
     });
     render();
 
+    devLog('→ POST /analyze-section: ' + section.label + ' (' + section.exchanges.length + ' exchange' + (section.exchanges.length>1?'s':'') + ')...', 'api');
+    const _secT0 = Date.now();
     try {
       const result = await requestJson(API + '/analyze-section', {
         method: 'POST',
@@ -1045,12 +1094,14 @@ async function finalizeIntense(runId) {
       });
       section.result = result;
       section.status = 'complete';
+      devLog(section.label + ' analysed in ' + ((Date.now()-_secT0)/1000).toFixed(1) + 's — score: ' + result.section_score + '/10', 'result');
       section.questionIndices.forEach(qi => {
         const analyses = [...state.analyses];
         analyses[qi] = { status: 'success', result: { result }, error: null };
         state.analyses = analyses;
       });
     } catch (e) {
+      devLog(section.label + ' analysis error: ' + e.message, 'error');
       section.status = 'failed';
       section.questionIndices.forEach(qi => {
         const analyses = [...state.analyses];
@@ -1070,6 +1121,8 @@ async function finalizeIntense(runId) {
       exchanges: s.exchanges,
       result: s.result,
     }));
+    devLog('→ POST /intense-review...', 'api');
+    const _revT0 = Date.now();
     const review = await requestJson(API + '/intense-review', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1080,8 +1133,10 @@ async function finalizeIntense(runId) {
       })
     });
     if (state.simulationRunId !== runId) return;
+    devLog('/intense-review done in ' + ((Date.now()-_revT0)/1000).toFixed(1) + 's — next round: ' + (review.next_round_probability ?? '?') + '%', 'result');
     setState({ phase: 'sim_holistic_review', holisticReview: review });
   } catch (e) {
+    devLog('/intense-review error: ' + e.message, 'error');
     if (state.simulationRunId !== runId) return;
     setState({ phase: 'sim_holistic_review', holisticReview: { error: e.message } });
   }

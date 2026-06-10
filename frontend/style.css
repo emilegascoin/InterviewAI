@@ -1428,3 +1428,87 @@ mark.filler-word {
   z-index: 9999;
   font-family: monospace;
 }
+
+/* ── Dev panel ──────────────────────────────────────────────────────────────── */
+#dev-toggle-btn {
+  position: fixed;
+  bottom: 8px;
+  left: 12px;
+  font-size: 10px;
+  font-family: monospace;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 7px;
+  cursor: pointer;
+  z-index: 9999;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+#dev-toggle-btn:hover { opacity: 1; }
+
+.dev-panel {
+  position: fixed;
+  bottom: 36px;
+  left: 12px;
+  width: 480px;
+  max-width: calc(100vw - 24px);
+  background: rgba(15, 17, 23, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  z-index: 9998;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+}
+.dev-panel.hidden { display: none; }
+
+.dev-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.dev-panel-controls { display: flex; gap: 6px; }
+.dev-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-family: monospace;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.dev-btn:hover { color: var(--text); border-color: var(--muted); }
+
+.dev-log {
+  height: 220px;
+  overflow-y: auto;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dev-log-line {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.dev-log-line.log-phase  { color: #6c63ff; }
+.dev-log-line.log-api    { color: #22c55e; }
+.dev-log-line.log-error  { color: #ef4444; }
+.dev-log-line.log-info   { color: var(--muted); }
+.dev-log-line.log-result { color: #f59e0b; }

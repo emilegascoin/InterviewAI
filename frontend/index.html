@@ -76,7 +76,18 @@
     <div id="progress" class="progress hidden"></div>
     <div id="card-container"></div>
   </div>
-  <div id="build-tag">v5.1</div>
-  <script src="/static/app.js?v=5"></script>
+  <div id="build-tag">v5.2</div>
+  <div id="dev-panel" class="dev-panel hidden">
+    <div class="dev-panel-header">
+      <span>Dev Log</span>
+      <div class="dev-panel-controls">
+        <button class="dev-btn" onclick="devClear()">Clear</button>
+        <button class="dev-btn" onclick="toggleDevPanel()">✕</button>
+      </div>
+    </div>
+    <div id="dev-log" class="dev-log"></div>
+  </div>
+  <button id="dev-toggle-btn" onclick="toggleDevPanel()" title="Toggle dev log">DEV</button>
+  <script src="/static/app.js?v=5.2"></script>
 </body>
 </html>

@@ -242,7 +242,7 @@ Job Description:
 {job_description.strip()}
 
 Arc structure - EXACTLY 8 questions in this order:
-- Q1: phase='intro', evaluation_mode='screening' - warm opening, tell-me-about-yourself style but phrased for this specific role.
+- Q1: phase='intro', evaluation_mode='screening' - MUST be a broad "walk me through your background" or "tell me about yourself" opener. Do NOT ask about a specific skill, tool, technology, or project. This is a general introduction — the candidate should be able to talk about their whole career history and what brings them here.
 - Q2-Q3: phase='background', evaluation_mode='screening' - experience questions referencing specific JD requirements.
 - Q4-Q5: phase='behavioral', evaluation_mode='star' - STAR behavioral questions testing ownership, impact, or collaboration.
 - {q67_instruction}
