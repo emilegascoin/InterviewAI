@@ -817,6 +817,41 @@ async function stopAndTranscribe() {
   }
 }
 
+// ── Audio level meter ────────────────────────────────────────────────────────
+let _audioCtx = null;
+let _levelInterval = null;
+
+function startLevelMeter(stream) {
+  try {
+    _audioCtx = new AudioContext();
+    const source = _audioCtx.createMediaStreamSource(stream);
+    const analyser = _audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+    _levelInterval = setInterval(() => {
+      analyser.getByteFrequencyData(buf);
+      const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
+      const pct = Math.min(100, avg * 2.5);
+      const el = document.getElementById('audio-level-fill');
+      if (el) el.style.width = pct + '%';
+      const label = document.getElementById('audio-level-label');
+      if (label) label.textContent = pct < 5 ? 'No signal ⚠' : pct < 20 ? 'Low' : 'Good';
+    }, 2000);
+  } catch (e) { console.warn('Level meter failed:', e); }
+}
+
+function stopLevelMeter() {
+  clearInterval(_levelInterval); _levelInterval = null;
+  try { if (_audioCtx) { _audioCtx.close(); _audioCtx = null; } } catch (_) {}
+}
+
+// Whisper hallucination guard — returns true if transcript is just silence artifacts
+const HALLUCINATION_RE = /^[\s,\.]*((you|yeah|yes|okay|ok|uh|um|thank you|thanks|bye|alright|right|so)\s*)+[\s,\.]*$/i;
+function isHallucination(t) {
+  return !t || t.trim().length < 3 || HALLUCINATION_RE.test(t.trim());
+}
+
 // ── Intense Mode ─────────────────────────────────────────────────────────────
 
 // TTS helpers
@@ -893,7 +928,9 @@ async function startRecordingIntense(qIdx, sIdx, runId, exchangeId, questionText
   _recordingStarting = true;
   let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+    });
     const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
     state.recorder.stream = stream;
     state.recorder.mediaRecorder = mr;
@@ -901,13 +938,15 @@ async function startRecordingIntense(qIdx, sIdx, runId, exchangeId, questionText
     const localChunks = [];
     mr.ondataavailable = e => { if (e.data.size > 0) localChunks.push(e.data); };
     mr.onstop = () => {
+      stopLevelMeter();
       if (state.simulationRunId === runId && state.intense.activeExchangeId === exchangeId) {
         stopAndTranscribeIntense(qIdx, sIdx, runId, exchangeId, localChunks, questionText, kind);
       }
     };
-    mr.onerror = () => { stopTimer(); };
+    mr.onerror = () => { stopTimer(); stopLevelMeter(); };
     mr.start();
     startTimer();
+    startLevelMeter(stream);
     devLog('Q' + (qIdx+1) + ' recorder started (' + kind + ')', 'info');
     setState({ phase: 'intense_recording' });
   } catch (e) {
@@ -951,6 +990,10 @@ async function stopAndTranscribeIntense(qIdx, sIdx, runId, exchangeId, localChun
     const data = await requestJson(API + '/transcribe', { method: 'POST', body: formData });
     transcript = (data.transcript || '').trim();
     devLog('Q' + (qIdx+1) + ' transcribed in ' + ((Date.now()-t0)/1000).toFixed(1) + 's: "' + transcript.slice(0, 80) + '"', 'result');
+    if (isHallucination(transcript)) {
+      devLog('Q' + (qIdx+1) + ' ⚠ hallucination/silence detected — check mic level', 'error');
+      transcript = '';
+    }
   } catch (e) {
     devLog('Q' + (qIdx+1) + ' transcription error after ' + ((Date.now()-t0)/1000).toFixed(1) + 's: ' + e.message, 'error');
     advanceIntense(qIdx, sIdx, runId);
@@ -1208,6 +1251,7 @@ function renderIntenseQuestionCard() {
       div.className = 'intense-recording-state';
       div.innerHTML =
         '<div class="intense-status">Listening...</div>' +
+        '<div class="audio-level-wrap"><div class="audio-level-bar"><div class="audio-level-fill" id="audio-level-fill"></div></div><span class="audio-level-label" id="audio-level-label">—</span></div>' +
         '<div class="record-controls">' +
           '<button class="btn record recording intense-stop-btn" data-action="intenseStop">Stop</button>' +
           '<div class="timer" id="timer">' + formatTime(state.recorder.seconds) + '</div>' +
