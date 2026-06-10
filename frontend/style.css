@@ -1421,7 +1421,7 @@ mark.filler-word {
   position: fixed;
   bottom: 8px;
   right: 12px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted);
   opacity: 0.5;
   pointer-events: none;
