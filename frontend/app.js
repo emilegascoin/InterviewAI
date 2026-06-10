@@ -115,6 +115,9 @@ function render() {
   };
   (map[state.phase] || renderJdCard)();
 
+  const backBtn = document.getElementById("back-btn");
+  if (backBtn) backBtn.style.display = state.phase === "jd" ? "none" : "flex";
+
   const progress = document.getElementById("progress");
   const hideProgressPhases = ["jd", "done", "sim_loading", "sim_between", "sim_review_loading", "sim_holistic_review", "intense_transcribing", "intense_thinking", "intense_finalizing"];
   if (hideProgressPhases.includes(state.phase)) {
@@ -1821,6 +1824,24 @@ const actions = {
       const statusEl = document.getElementById("jd-status");
       if (statusEl) statusEl.textContent = "Intense Mode error: " + e.message;
     }
+  },
+
+  backToMenu: () => {
+    abortIntenseRun();
+    stopLevelMeter();
+    cancelSpeech();
+    stopTimer();
+    setState({
+      phase: "jd",
+      sessionType: "practice",
+      questions: [],
+      answers: [],
+      analyses: [],
+      currentIndex: 0,
+      simulationRunId: null,
+      interviewer: {},
+      intense: { sections: [], activeExchangeId: null },
+    });
   },
 
   intenseStop: () => {
