@@ -1461,7 +1461,7 @@ mark.filler-word {
   right: 12px;
   font-size: 13px;
   color: var(--muted);
-  opacity: 0.5;
+  opacity: 1;
   pointer-events: none;
   z-index: 9999;
   font-family: monospace;
