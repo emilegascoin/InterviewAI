@@ -19,31 +19,6 @@
   --radius: 12px;
 }
 
-/* Back button — top-left corner, visible when not on main menu */
-#back-btn {
-  position: fixed;
-  top: 14px;
-  left: 18px;
-  z-index: 9999;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: none;
-  background: #2d3748;
-  color: #e2e8f0;
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-  transition: background 0.15s, transform 0.1s;
-}
-#back-btn:hover { background: #4a5568; transform: scale(1.1); }
-#back-btn:active { transform: scale(0.95); }
-
-@media print { #back-btn { display: none !important; } }
 
 /* Fixed exit button — top-right corner, always visible */
 #exit-btn {
@@ -537,7 +512,28 @@ header h1 {
   border-radius: var(--radius);
   padding: 28px;
   margin-bottom: 20px;
+  position: relative;
 }
+
+.card-back-btn {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.card-back-btn:hover { background: var(--border); color: var(--text); }
+@media print { .card-back-btn { display: none !important; } }
 
 .card h2 {
   font-size: 1rem;

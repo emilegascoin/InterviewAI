@@ -924,11 +924,11 @@ Rules:
 
 Return ONLY valid JSON. No markdown, no commentary. Use double quotes.
 {{
-  "phase": "{phase}",
+  "phase": "{phase if not interviewer_persona else 'intro|background|behavioral|technical|closing — pick the most appropriate'}",
   "question": "The actual question text",
   "framing": "One conversational sentence before the question",
   "competency": "e.g. technical_depth / ownership / communication / motivation",
-  "evaluation_mode": "{eval_mode}"
+  "evaluation_mode": "{eval_mode if not interviewer_persona else 'screening|star|technical|closing_question — pick the most appropriate'}"
 }}"""
 
     raw = await generate(prompt, json_mode=True)

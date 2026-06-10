@@ -115,9 +115,6 @@ function render() {
   };
   (map[state.phase] || renderJdCard)();
 
-  const backBtn = document.getElementById("back-btn");
-  if (backBtn) backBtn.style.display = state.phase === "jd" ? "none" : "flex";
-
   const progress = document.getElementById("progress");
   const hideProgressPhases = ["jd", "done", "sim_loading", "sim_between", "sim_review_loading", "sim_holistic_review", "intense_transcribing", "intense_thinking", "intense_finalizing"];
   if (hideProgressPhases.includes(state.phase)) {
@@ -754,6 +751,17 @@ function escHtml(str) {
 function setCard(html, skipAnimation = false) {
   const container = document.getElementById("card-container");
   container.innerHTML = html;
+  if (state.phase !== "jd") {
+    const card = container.querySelector(".card");
+    if (card) {
+      const btn = document.createElement("button");
+      btn.className = "card-back-btn";
+      btn.title = "Back to menu";
+      btn.innerHTML = "&#8592;";
+      btn.setAttribute("data-action", "backToMenu");
+      card.insertBefore(btn, card.firstChild);
+    }
+  }
   if (!skipAnimation) {
     container.classList.remove("fade-in");
     void container.offsetWidth;
