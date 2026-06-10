@@ -996,7 +996,7 @@ async function stopAndTranscribeIntense(qIdx, sIdx, runId, exchangeId, localChun
     formData.append('audio', blob, 'recording.webm');
     const data = await requestJson(API + '/transcribe', { method: 'POST', body: formData });
     transcript = (data.transcript || '').trim();
-    devLog('Q' + (qIdx+1) + ' transcribed in ' + ((Date.now()-t0)/1000).toFixed(1) + 's: "' + transcript.slice(0, 80) + '"', 'result');
+    devLog('Q' + (qIdx+1) + ' transcribed in ' + ((Date.now()-t0)/1000).toFixed(1) + 's: "' + transcript + '"', 'result');
     if (isHallucination(transcript)) {
       devLog('Q' + (qIdx+1) + ' ⚠ hallucination/silence detected — check mic level', 'error');
       transcript = '';
