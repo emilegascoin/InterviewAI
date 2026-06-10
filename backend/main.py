@@ -194,6 +194,32 @@ class SimulationReviewRequest(BaseModel):
     answers: list[SimulationAnswerItem]
 
 
+class FollowUpCheckRequest(BaseModel):
+    job_description: str
+    interview_mode: str = "technical"
+    section_id: str
+    section_label: str
+    original_question: str
+    conversation: list = []
+    latest_answer: str
+    follow_up_count: int = 0
+    max_follow_ups: int = 2
+
+
+class SectionAnalyzeRequest(BaseModel):
+    job_description: str
+    interview_mode: str = "technical"
+    section_id: str
+    section_label: str
+    exchanges: list
+
+
+class IntenseReviewRequest(BaseModel):
+    job_description: str
+    interview_mode: str = "technical"
+    sections: list
+
+
 @app.post("/generate-questions")
 async def generate_questions(req: JobDescRequest):
     try:
@@ -297,6 +323,53 @@ async def analyze(req: AnalyzeRequest):
             req.question,
             req.transcript,
             req.interview_mode
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/follow-up-check")
+async def follow_up_check_ep(req: FollowUpCheckRequest):
+    try:
+        result = await ollama_handler.check_follow_up(
+            req.job_description,
+            req.interview_mode,
+            req.section_id,
+            req.section_label,
+            req.original_question,
+            req.conversation,
+            req.latest_answer,
+            req.follow_up_count,
+            req.max_follow_ups,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/analyze-section")
+async def analyze_section_ep(req: SectionAnalyzeRequest):
+    try:
+        result = await ollama_handler.analyze_section(
+            req.job_description,
+            req.interview_mode,
+            req.section_id,
+            req.section_label,
+            req.exchanges,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/intense-review")
+async def intense_review_ep(req: IntenseReviewRequest):
+    try:
+        result = await ollama_handler.generate_holistic_review(
+            job_description=req.job_description,
+            interview_mode=req.interview_mode,
+            sections=req.sections,
         )
         return result
     except Exception as e:

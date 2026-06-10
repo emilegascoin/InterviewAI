@@ -18,10 +18,26 @@ const state = {
   questionDelivered: true,
   holisticReview: null,
   // Intense Mode fields
-  analyses: [],        // [{status, promise, result, error}] — one per question
+  analyses: [],
   simulationRunId: null,
+  intense: {
+    sections: [],
+    activeExchangeId: null,
+  },
   recorder: { mediaRecorder: null, stream: null, chunks: [], timerInterval: null, seconds: 0 }
 };
+
+const SECTIONS = [
+  { id: 'intro',      label: 'Introduction', questionIndices: [0] },
+  { id: 'background', label: 'Background',   questionIndices: [1, 2] },
+  { id: 'behavioral', label: 'Behavioural',  questionIndices: [3, 4] },
+  { id: 'technical',  label: 'Technical',    questionIndices: [5, 6] },
+  { id: 'closing',    label: 'Closing',      questionIndices: [7] },
+];
+
+function getSectionForQuestion(qIdx) {
+  return SECTIONS.findIndex(s => s.questionIndices.includes(qIdx));
+}
 
 function setState(patch) {
   Object.assign(state, patch);
@@ -55,12 +71,14 @@ function render() {
     // Intense Mode phases
     intense_question:    renderIntenseQuestionCard,
     intense_recording:   renderIntenseQuestionCard,
+    intense_transcribing: renderIntenseQuestionCard,
+    intense_thinking:     renderIntenseQuestionCard,
     intense_finalizing:  renderIntenseFinalizingCard
   };
   (map[state.phase] || renderJdCard)();
 
   const progress = document.getElementById("progress");
-  const hideProgressPhases = ["jd", "done", "sim_loading", "sim_between", "sim_review_loading", "sim_holistic_review", "intense_finalizing"];
+  const hideProgressPhases = ["jd", "done", "sim_loading", "sim_between", "sim_review_loading", "sim_holistic_review", "intense_transcribing", "intense_thinking", "intense_finalizing"];
   if (hideProgressPhases.includes(state.phase)) {
     progress.classList.add("hidden");
   } else {
@@ -506,6 +524,14 @@ function renderSimHolisticReviewCard() {
       <div style="text-align:center;margin-bottom:16px">
         <span class="hire-badge ${hireClass}">${escHtml(r.hire_signal || "Mixed")}</span>
         <p class="hire-reasoning" style="font-size:14px;color:var(--muted);margin-top:8px">${escHtml(r.hire_reasoning || "")}</p>
+        ${r.next_round_probability != null ? `
+          <div class="next-round-bar-wrap">
+            <div class="next-round-label">Next Round Probability</div>
+            <div class="next-round-bar"><div class="next-round-bar-fill" style="width:${r.next_round_probability}%"></div></div>
+            <div class="next-round-pct">${r.next_round_probability}%</div>
+            ${r.probability_reasoning ? `<div class="next-round-reason">${escHtml(r.probability_reasoning)}</div>` : ""}
+          </div>
+        ` : ""}
         <p class="done-avg" style="margin-top:8px">Average score: <strong>${avgScore}/10</strong> across ${state.questions.length} questions</p>
       </div>
 
@@ -554,73 +580,39 @@ function renderSimHolisticReviewCard() {
       ` : ""}
 
       ${state.sessionType === "intense" ? (() => {
-        const failed = state.analyses
-          .map((a, i) => a && a.status === "failed" ? `Q${i + 1}: ${a.error || "unknown error"}` : null)
-          .filter(Boolean);
-        return failed.length ? `
+        const sections = (state.intense && state.intense.sections) ? state.intense.sections : [];
+        if (!sections.length) return "";
+        const failedSections = sections.filter(s => s.status === "failed");
+        const errorsHtml = failedSections.length ? `
           <div class="intense-errors-box">
-            <div class="intense-errors-title">⚠ ${failed.length} answer${failed.length > 1 ? "s" : ""} could not be analysed</div>
-            ${failed.map(e => `<div class="intense-error-item">${escHtml(e)}</div>`).join("")}
+            <div class="intense-errors-title">⚠ ${failedSections.length} section${failedSections.length > 1 ? "s" : ""} could not be analysed</div>
+            ${failedSections.map(s => `<div class="intense-error-item">${escHtml(s.label)}</div>`).join("")}
           </div>
         ` : "";
-      })() : ""}
-
-      ${state.sessionType === "intense" ? (() => {
-        const isTechnical = state.interviewMode === "technical";
-        return state.questions.map((qObj, i) => {
-          const q = qObj.text || "";
-          const answer = state.answers[i] || {};
-          const r = answer.result || {};
-          const rawLabel = (r.formality_label || "Neutral").toLowerCase();
-          const formalityLabel = ["informal", "neutral", "professional"].includes(rawLabel) ? rawLabel : "neutral";
-          const star = r.star_coverage || {};
-
-          const starMini = isTechnical ? `
-            <div class="star-items" style="margin-left:auto">
-              ${starItem("S", star.situation)}
-              ${starItem("T", star.task)}
-              ${starItem("A", star.action)}
-              ${starItem("R", star.result)}
-            </div>` : "";
-
+        const sectionCardsHtml = sections.map(sec => {
+          const res = sec.result || {};
+          const score = res.section_score;
+          const exchanges = sec.exchanges || [];
+          const exchangeHtml = exchanges.map(ex => {
+            const isFollowUp = ex.kind === "follow_up";
+            return `
+              <div class="exchange-item ${isFollowUp ? "exchange-item--followup" : "exchange-item--question"}">${escHtml((isFollowUp ? "↳ " : "") + (ex.question || ""))}</div>
+              <div class="exchange-item exchange-item--answer">${escHtml(ex.answer || "(no answer recorded)")}</div>
+            `;
+          }).join("");
           return `
-            <div class="summary-section">
-              <div class="summary-q-header">
-                <span class="summary-q-num">Q${i + 1}</span>
-                <span class="summary-q-text">${escHtml(q)}</span>
+            <div class="section-review-card">
+              <div class="section-review-header">
+                <span class="section-review-label">${escHtml(sec.label)}</span>
+                ${score != null ? `<span class="section-score-badge">${score}/10</span>` : ""}
               </div>
-
-              ${r.overall_score != null ? `
-                <div class="scores-grid">
-                  ${scoreCard("Overall", r.overall_score, r.overall_why)}
-                  ${scoreCard("Relevance", r.relevance_score, r.relevance_why)}
-                  ${scoreCard("Specificity", r.specificity_score, r.specificity_why)}
-                  ${scoreCard("Formality", r.formality_score, r.formality_why)}
-                  ${fillerCard(r.filler_words ?? 0)}
-                </div>
-                <div class="summary-row-inline">
-                  <span class="formality-badge ${formalityLabel}">${escHtml(r.formality_label || "Neutral")}</span>
-                  <span class="formality-notes">${escHtml(r.formality_notes || "")}</span>
-                  ${starMini}
-                </div>
-              ` : `<p style="color:var(--muted);font-size:13px;padding:8px 0">Analysis unavailable${answer.error ? ': ' + escHtml(answer.error) : ''}</p>`}
-
-              ${answer.transcript ? `
-                <div class="summary-transcript">
-                  <div class="transcript-label">Your Answer</div>
-                  <p>${highlightTranscript(answer.transcript)}</p>
-                </div>
-              ` : ""}
-
-              ${r.feedback ? `
-                <div class="summary-feedback">
-                  <div class="transcript-label">Feedback</div>
-                  <p>${escHtml(r.feedback)}</p>
-                </div>
-              ` : ""}
+              <div class="exchange-thread">${exchangeHtml || `<div class="exchange-item" style="color:var(--muted)">No exchanges recorded</div>`}</div>
+              ${res.feedback ? `<div class="summary-feedback"><div class="transcript-label">Feedback</div><p>${escHtml(res.feedback)}</p></div>` : ""}
+              ${res.section_why ? `<p style="font-size:12px;color:var(--muted);margin-top:4px">${escHtml(res.section_why)}</p>` : ""}
             </div>
           `;
         }).join("");
+        return errorsHtml + `<div class="review-section-label">Section Breakdown</div>` + sectionCardsHtml;
       })() : ""}
 
       <div class="results-actions">
@@ -825,338 +817,406 @@ function cancelSpeech() {
 }
 
 // Deliver question via TTS then auto-start recording
-async function deliverQuestion(idx, runId) {
-  if (state.simulationRunId !== runId) return;
-  const qObj = state.questions[idx] || {};
-  const framing = qObj.framing ? `${qObj.framing} ` : "";
-  const qText = qObj.text || "";
-  setState({ phase: "intense_question", currentIndex: idx, questionVisible: false });
-  await speakText(`${framing}${qText}`);
-  if (state.simulationRunId !== runId) return;
-  await startRecordingIntense(idx, runId);
+function initIntenseSections() {
+  state.intense.sections = SECTIONS.map(s => ({
+    ...s,
+    exchanges: [],
+    result: null,
+    status: 'pending',
+    followUpCount: 0,
+  }));
 }
 
-// Start recording in intense mode (fires automatically after TTS)
-async function startRecordingIntense(idx, runId) {
+async function deliverQuestion(qIdx, runId) {
   if (state.simulationRunId !== runId) return;
+  const exchangeId = Date.now() + '-' + Math.random();
+  state.intense.activeExchangeId = exchangeId;
+
+  const qObj = state.questions[qIdx] || {};
+  const framing = qObj.framing ? qObj.framing + ' ' : '';
+  const qText = qObj.text || '';
+
+  const sIdx = getSectionForQuestion(qIdx);
+  if (sIdx >= 0) state.intense.sections[sIdx].status = 'active';
+
+  setState({ phase: 'intense_question', currentIndex: qIdx, questionVisible: false });
+  await speakText(framing + qText);
+  if (state.simulationRunId !== runId || state.intense.activeExchangeId !== exchangeId) return;
+  await startRecordingIntense(qIdx, sIdx, runId, exchangeId, qText, 'original');
+}
+
+async function startRecordingIntense(qIdx, sIdx, runId, exchangeId, questionText, kind) {
+  if (state.simulationRunId !== runId || state.intense.activeExchangeId !== exchangeId) return;
   if (_recordingStarting) return;
   _recordingStarting = true;
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mr = new MediaRecorder(stream, { mimeType: "audio/webm" });
+    const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
     state.recorder.stream = stream;
     state.recorder.mediaRecorder = mr;
     state.recorder.chunks = [];
     const localChunks = [];
     mr.ondataavailable = e => { if (e.data.size > 0) localChunks.push(e.data); };
     mr.onstop = () => {
-      if (state.simulationRunId === runId) stopAndTranscribeIntense(idx, runId, localChunks);
+      if (state.simulationRunId === runId && state.intense.activeExchangeId === exchangeId) {
+        stopAndTranscribeIntense(qIdx, sIdx, runId, exchangeId, localChunks, questionText, kind);
+      }
     };
     mr.onerror = () => { stopTimer(); };
     mr.start();
     startTimer();
-    setState({ phase: "intense_recording" });
+    setState({ phase: 'intense_recording' });
   } catch (e) {
     if (stream) stream.getTracks().forEach(t => t.stop());
-    // Record the failure so finalizeIntense doesn't hand a null slot to /simulation-review
-    const analyses = [...state.analyses];
-    analyses[idx] = { status: "failed", promise: Promise.resolve(), result: null, error: "Mic error: " + e.message };
-    state.analyses = analyses;
-    // Abort on first question if mic is flat-out denied — no point continuing
-    if (idx === 0) {
-      setState({ phase: "jd", sessionType: "practice" });
-      const statusEl = document.getElementById("jd-status");
-      if (statusEl) statusEl.textContent = "Microphone access denied — Intense Mode requires mic access.";
+    if (qIdx === 0 && kind === 'original') {
+      setState({ phase: 'jd', sessionType: 'practice' });
+      const statusEl = document.getElementById('jd-status');
+      if (statusEl) statusEl.textContent = 'Microphone access denied -- Intense Mode requires mic access.';
       return;
     }
-    advanceIntense(idx, runId);
+    advanceIntense(qIdx, sIdx, runId);
   } finally {
     _recordingStarting = false;
   }
 }
 
-// Called inside mr.onstop — audio is fully flushed at this point.
-// Stops the mic stream, stores the blob, then advances to the next question.
-function stopAndTranscribeIntense(idx, runId, localChunks) {
-  if (state.simulationRunId !== runId) return;
+async function stopAndTranscribeIntense(qIdx, sIdx, runId, exchangeId, localChunks, questionText, kind) {
+  if (state.simulationRunId !== runId || state.intense.activeExchangeId !== exchangeId) return;
 
-  // Stop tracks here, not in intenseStop — onstop guarantees the buffer is flushed first
   const { stream } = state.recorder;
   if (stream) stream.getTracks().forEach(t => t.stop());
 
-  const blob = localChunks && localChunks.length ? new Blob(localChunks, { type: "audio/webm" }) : null;
-  console.log(`[Intense] Q${idx + 1} blob: ${blob ? blob.size + ' bytes, ' + localChunks.length + ' chunks' : 'null'}`);
+  const blob = localChunks && localChunks.length ? new Blob(localChunks, { type: 'audio/webm' }) : null;
+
+  if (!blob || blob.size === 0) {
+    advanceIntense(qIdx, sIdx, runId);
+    return;
+  }
+
+  setState({ phase: 'intense_transcribing' });
+  let transcript = '';
+  try {
+    const formData = new FormData();
+    formData.append('audio', blob, 'recording.webm');
+    const data = await requestJson(API + '/transcribe', { method: 'POST', body: formData });
+    transcript = (data.transcript || '').trim();
+  } catch (e) {
+    console.error('[Intense] Transcription failed:', e.message);
+    advanceIntense(qIdx, sIdx, runId);
+    return;
+  }
+
+  if (state.simulationRunId !== runId || state.intense.activeExchangeId !== exchangeId) return;
+
+  const section = state.intense.sections[sIdx];
+  section.exchanges.push({ kind, question: questionText, answer: transcript });
+
   const answers = [...state.answers];
-  answers[idx] = { ...(answers[idx] || {}), audioBlob: blob };
+  answers[qIdx] = { ...(answers[qIdx] || {}), transcript, audioBlob: blob };
   state.answers = answers;
-  advanceIntense(idx, runId);
+
+  await checkFollowUp(transcript, questionText, qIdx, sIdx, runId, exchangeId, kind);
 }
 
-// Move to next question or begin finalising
-function advanceIntense(idx, runId) {
+async function checkFollowUp(transcript, questionText, qIdx, sIdx, runId, exchangeId, kind) {
+  if (state.simulationRunId !== runId || state.intense.activeExchangeId !== exchangeId) return;
+
+  const section = state.intense.sections[sIdx];
+  const followUpCount = section.followUpCount;
+
+  if (kind === 'follow_up' || followUpCount >= 2 || section.id === 'closing') {
+    advanceIntense(qIdx, sIdx, runId);
+    return;
+  }
+
+  setState({ phase: 'intense_thinking' });
+
+  try {
+    const conversation = section.exchanges.slice(0, -1).map(ex => ({
+      question: ex.question,
+      answer: ex.answer,
+    }));
+
+    const data = await requestJson(API + '/follow-up-check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job_description: state.jobDescription,
+        interview_mode: state.interviewMode,
+        section_id: section.id,
+        section_label: section.label,
+        original_question: section.exchanges.find(e => e.kind === 'original')?.question || questionText,
+        conversation,
+        latest_answer: transcript,
+        follow_up_count: followUpCount,
+        max_follow_ups: 2,
+      })
+    });
+
+    if (state.simulationRunId !== runId || state.intense.activeExchangeId !== exchangeId) return;
+
+    if (data.decision === 'follow_up' && data.text) {
+      section.followUpCount++;
+      const followUpText = data.text;
+      const newExchangeId = Date.now() + '-' + Math.random();
+      state.intense.activeExchangeId = newExchangeId;
+
+      setState({ phase: 'intense_question' });
+      await speakText(followUpText);
+      if (state.simulationRunId !== runId || state.intense.activeExchangeId !== newExchangeId) return;
+      await startRecordingIntense(qIdx, sIdx, runId, newExchangeId, followUpText, 'follow_up');
+    } else {
+      if (data.text) await speakText(data.text);
+      if (state.simulationRunId !== runId) return;
+      advanceIntense(qIdx, sIdx, runId);
+    }
+  } catch (e) {
+    console.error('[Intense] Follow-up check failed:', e.message);
+    advanceIntense(qIdx, sIdx, runId);
+  }
+}
+
+function advanceIntense(qIdx, sIdx, runId) {
   if (state.simulationRunId !== runId) return;
-  const nextIdx = idx + 1;
-  if (nextIdx < state.questions.length) {
-    deliverQuestion(nextIdx, runId);
+
+  const section = state.intense.sections[sIdx];
+  const questionIndices = section.questionIndices;
+  const posInSection = questionIndices.indexOf(qIdx);
+  const nextQIdxInSection = posInSection >= 0 && posInSection < questionIndices.length - 1
+    ? questionIndices[posInSection + 1]
+    : null;
+
+  if (nextQIdxInSection !== null) {
+    deliverQuestion(nextQIdxInSection, runId);
+    return;
+  }
+
+  section.status = 'complete';
+  const nextSIdx = sIdx + 1;
+  if (nextSIdx < SECTIONS.length) {
+    const nextSection = state.intense.sections[nextSIdx];
+    deliverQuestion(nextSection.questionIndices[0], runId);
   } else {
-    setState({ phase: "intense_finalizing" });
+    setState({ phase: 'intense_finalizing' });
     finalizeIntense(runId);
   }
 }
 
-// Process all recorded answers sequentially, then call /simulation-review.
-// Sequential = one Whisper + one Ollama call at a time — reliable, no GPU contention.
 async function finalizeIntense(runId) {
   if (state.simulationRunId !== runId) return;
 
-  // Reset all analyses to null so the card shows them as grey initially
   state.analyses = state.questions.map(() => null);
   render();
 
-  for (let i = 0; i < state.questions.length; i++) {
+  for (let sIdx = 0; sIdx < state.intense.sections.length; sIdx++) {
     if (state.simulationRunId !== runId) return;
+    const section = state.intense.sections[sIdx];
 
-    const answer = state.answers[i] || {};
-    const blob = answer.audioBlob || null;
-    const q = state.questions[i] || {};
-
-    // Mark as processing and re-render so the dot goes amber
-    const analyses = [...state.analyses];
-    analyses[i] = { status: "pending", result: null, error: null };
-    state.analyses = analyses;
-    render();
-
-    if (!blob || blob.size === 0) {
-      const analyses = [...state.analyses];
-      analyses[i] = { status: "failed", result: null, error: "No audio captured" };
-      state.analyses = analyses;
+    if (!section.exchanges.length) {
+      section.status = 'failed';
+      section.questionIndices.forEach(qi => {
+        const analyses = [...state.analyses];
+        analyses[qi] = { status: 'failed', result: null, error: 'No exchanges recorded' };
+        state.analyses = analyses;
+      });
       render();
       continue;
     }
 
+    section.questionIndices.forEach(qi => {
+      const analyses = [...state.analyses];
+      analyses[qi] = { status: 'pending', result: null, error: null };
+      state.analyses = analyses;
+    });
+    render();
+
     try {
-      const formData = new FormData();
-      formData.append("audio", blob, "recording.webm");
-      formData.append("question_obj", JSON.stringify({
-        phase: q.phase,
-        question: q.text,
-        framing: q.framing,
-        competency: q.competency,
-        evaluation_mode: q.evaluationMode
-      }));
-      formData.append("interview_mode", state.interviewMode);
-
-      const data = await requestJson(`${API}/transcribe/analyze-simulation`, {
-        method: "POST",
-        body: formData
+      const result = await requestJson(API + '/analyze-section', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          job_description: state.jobDescription,
+          interview_mode: state.interviewMode,
+          section_id: section.id,
+          section_label: section.label,
+          exchanges: section.exchanges,
+        })
       });
-
-      console.log(`[Intense] Q${i + 1} done — "${data.transcript?.slice(0, 60)}..."`);
-      const analyses = [...state.analyses];
-      analyses[i] = { status: "success", result: data, error: null };
-      state.analyses = analyses;
-      render();
+      section.result = result;
+      section.status = 'complete';
+      section.questionIndices.forEach(qi => {
+        const analyses = [...state.analyses];
+        analyses[qi] = { status: 'success', result: { result }, error: null };
+        state.analyses = analyses;
+      });
     } catch (e) {
-      console.error(`[Intense] Q${i + 1} failed:`, e.message);
-      const analyses = [...state.analyses];
-      analyses[i] = { status: "failed", result: null, error: e.message };
-      state.analyses = analyses;
-      render();
+      section.status = 'failed';
+      section.questionIndices.forEach(qi => {
+        const analyses = [...state.analyses];
+        analyses[qi] = { status: 'failed', result: null, error: e.message };
+        state.analyses = analyses;
+      });
     }
+    render();
   }
 
   if (state.simulationRunId !== runId) return;
 
-  // Populate state.answers for renderSimHolisticReviewCard compatibility
-  const answers = state.questions.map((_, i) => {
-    const a = state.analyses[i] || {};
-    const existing = state.answers[i] || {};
-    return {
-      ...existing,
-      transcript: (a.result && a.result.transcript) || "",
-      result:     (a.result && a.result.result)     || null,
-      error:       a.error || null
-    };
-  });
-  state.answers = answers;
-
-  const answersPayload = state.questions.map((q, i) => {
-    const a = state.analyses[i] || {};
-    return {
-      question_text:   q.text           || "",
-      phase:           q.phase          || "general",
-      competency:      q.competency     || "general",
-      evaluation_mode: q.evaluationMode || "star",
-      transcript: (a.result && a.result.transcript) || "",
-      result:     (a.result && a.result.result)     || {}
-    };
-  });
-
   try {
-    const review = await requestJson(`${API}/simulation-review`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const sectionsPayload = state.intense.sections.map(s => ({
+      id: s.id,
+      label: s.label,
+      exchanges: s.exchanges,
+      result: s.result,
+    }));
+    const review = await requestJson(API + '/intense-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        job_description:  state.jobDescription,
-        interview_mode:   state.interviewMode,
-        answers:          answersPayload
+        job_description: state.jobDescription,
+        interview_mode: state.interviewMode,
+        sections: sectionsPayload,
       })
     });
     if (state.simulationRunId !== runId) return;
-    setState({ phase: "sim_holistic_review", holisticReview: review });
+    setState({ phase: 'sim_holistic_review', holisticReview: review });
   } catch (e) {
     if (state.simulationRunId !== runId) return;
-    setState({ phase: "sim_holistic_review", holisticReview: { error: e.message } });
+    setState({ phase: 'sim_holistic_review', holisticReview: { error: e.message } });
   }
 }
-
-// ── Card: Intense Mode (question + recording) ─────────────────────────────────
 function renderIntenseQuestionCard() {
   const phase = state.phase;
   const idx   = state.currentIndex;
   const qObj  = state.questions[idx] || {};
   const total = state.questions.length;
-  const isRecording = phase === "intense_recording";
+  const isRecording    = phase === 'intense_recording';
+  const isTranscribing = phase === 'intense_transcribing';
+  const isThinking     = phase === 'intense_thinking';
+  const isSpeaking     = phase === 'intense_question';
   const interviewer = state.interviewer || {};
-  const interviewerLabel = [interviewer.name, interviewer.role].filter(Boolean).join(" - ") || "Interviewer";
+  const interviewerLabel = [interviewer.name, interviewer.role].filter(Boolean).join(' - ') || 'Interviewer';
 
-  const dotsHtml = state.questions.map((_, i) => {
-    const a = state.analyses[i];
-    let cls = "intense-dot";
-    if (!a)                          cls += " intense-dot--pending";
-    else if (a.status === "pending") cls += " intense-dot--running";
-    else if (a.status === "success") cls += " intense-dot--done";
-    else if (a.status === "failed")  cls += " intense-dot--error";
-    else                             cls += " intense-dot--pending";
-    if (i === idx)                   cls += " intense-dot--current";
-    return `<div class="${cls}" title="Q${i + 1}"></div>`;
-  }).join("");
+  const sectionDotsHtml = state.intense.sections.map((s, i) => {
+    const isCurrent = getSectionForQuestion(idx) === i;
+    let cls = 'section-dot';
+    if (s.status === 'complete') cls += ' section-dot--complete';
+    else if (s.status === 'failed') cls += ' section-dot--failed';
+    else if (isCurrent) cls += ' section-dot--active';
+    return '<div class="' + cls + '"><div class="section-dot-circle"></div><div class="section-dot-label">' + escHtml(s.label) + '</div></div>';
+  }).join('');
 
-  const container = document.getElementById("card-container");
-  const existing = container.querySelector(".intense-card");
+  let stateIndicator = '';
+  if (isSpeaking) {
+    stateIndicator = '<div class="intense-status tts-speaking"><span class="tts-pulse"></span> Interviewer speaking...</div>';
+  } else if (isTranscribing) {
+    stateIndicator = '<div class="intense-transcribing-indicator"><div class="transcribing-bar"></div><div class="transcribing-bar"></div><div class="transcribing-bar"></div><div class="transcribing-bar"></div><div class="transcribing-bar"></div><span style="margin-left:4px">Transcribing...</span></div>';
+  } else if (isThinking) {
+    stateIndicator = '<div class="intense-thinking-indicator"><div class="thinking-dot"></div><div class="thinking-dot"></div><div class="thinking-dot"></div><span style="margin-left:4px">Interviewer is thinking...</span></div>';
+  }
+
+  const container = document.getElementById('card-container');
+  const existing = container.querySelector('.intense-card');
 
   if (existing) {
-    // In-place update — no DOM replacement, no repaint flash
-    const dotsEl = existing.querySelector(".intense-dots");
-    if (dotsEl) dotsEl.innerHTML = dotsHtml;
+    const secDots = existing.querySelector('.intense-sections');
+    if (secDots) secDots.innerHTML = sectionDotsHtml;
 
-    const progressEl = existing.querySelector(".intense-progress");
-    if (progressEl) progressEl.textContent = `Q${idx + 1} of ${total}`;
+    const progressEl = existing.querySelector('.intense-progress');
+    if (progressEl) progressEl.textContent = 'Q' + (idx + 1) + ' of ' + total;
 
-    const qBox = existing.querySelector(".question-box");
-    if (qBox) qBox.textContent = qObj.text || "";
+    const qBox = existing.querySelector('.question-box');
+    if (qBox) qBox.textContent = qObj.text || '';
 
-    // Toggle TTS speaking indicator
-    let ttsEl = existing.querySelector(".tts-speaking");
-    if (!isRecording && !ttsEl) {
-      const div = document.createElement("div");
-      div.className = "intense-status tts-speaking";
-      div.innerHTML = `<span class="tts-pulse"></span> Interviewer speaking...`;
-      const header = existing.querySelector(".intense-header");
-      if (header) header.insertAdjacentElement("afterend", div);
-    } else if (isRecording && ttsEl) {
-      ttsEl.remove();
-    }
+    const stateEl = existing.querySelector('.intense-state-indicator');
+    if (stateEl) stateEl.innerHTML = stateIndicator;
 
-    // Toggle recording vs waiting state
-    let recState = existing.querySelector(".intense-recording-state");
-    let waitState = existing.querySelector(".intense-waiting-state");
+    let recState  = existing.querySelector('.intense-recording-state');
+    let waitState = existing.querySelector('.intense-waiting-state');
 
     if (isRecording && !recState) {
       if (waitState) waitState.remove();
-      const div = document.createElement("div");
-      div.className = "intense-recording-state";
-      div.innerHTML = `
-        <div class="intense-status">Listening...</div>
-        <div class="record-controls">
-          <button class="btn record recording intense-stop-btn" data-action="intenseStop">Stop</button>
-          <div class="timer" id="timer">${formatTime(state.recorder.seconds)}</div>
-        </div>
-        <p class="intense-status">Answer recorded — analysis runs after the interview.</p>
-      `;
+      const div = document.createElement('div');
+      div.className = 'intense-recording-state';
+      div.innerHTML =
+        '<div class="intense-status">Listening...</div>' +
+        '<div class="record-controls">' +
+          '<button class="btn record recording intense-stop-btn" data-action="intenseStop">Stop</button>' +
+          '<div class="timer" id="timer">' + formatTime(state.recorder.seconds) + '</div>' +
+        '</div>' +
+        '<p class="intense-status">Your answer is being recorded.</p>';
       existing.appendChild(div);
-    } else if (!isRecording && !waitState) {
-      if (recState) recState.remove();
-      const div = document.createElement("div");
-      div.className = "intense-waiting-state";
-      div.innerHTML = `<p class="intense-status">Recording starts automatically when speaking finishes.</p>`;
+    } else if (!isRecording && recState) {
+      recState.remove();
+    }
+
+    if (!isRecording && !waitState) {
+      const div = document.createElement('div');
+      div.className = 'intense-waiting-state';
+      div.innerHTML = '<p class="intense-status">Recording starts automatically when speaking finishes.</p>';
       existing.appendChild(div);
+    } else if (isRecording && waitState) {
+      waitState.remove();
     }
     return;
   }
 
-  // First render — full card, with animation
-  setCard(`
-    <div class="card intense-card">
-      <div class="intense-interviewer">${escHtml(interviewerLabel)}</div>
-      <div class="intense-header">
-        <span class="intense-mode-badge">Intense Mode</span>
-        <span class="intense-progress">Q${idx + 1} of ${total}</span>
-      </div>
-
-      <div class="intense-dots">${dotsHtml}</div>
-
-      ${!isRecording ? `
-        <div class="intense-status tts-speaking">
-          <span class="tts-pulse"></span> Interviewer speaking...
-        </div>
-      ` : ""}
-
-      <div class="question-box">${escHtml(qObj.text || "")}</div>
-
-      ${isRecording ? `
-        <div class="intense-recording-state">
-          <div class="intense-status">Listening...</div>
-          <div class="record-controls">
-            <button class="btn record recording intense-stop-btn" data-action="intenseStop">Stop</button>
-            <div class="timer" id="timer">${formatTime(state.recorder.seconds)}</div>
-          </div>
-          <p class="intense-status">Answer recorded — analysis runs after the interview.</p>
-        </div>
-      ` : `
-        <div class="intense-waiting-state">
-          <p class="intense-status">Recording starts automatically when speaking finishes.</p>
-        </div>
-      `}
-    </div>
-  `);
+  setCard(
+    '<div class="card intense-card">' +
+      '<div class="intense-interviewer">' + escHtml(interviewerLabel) + '</div>' +
+      '<div class="intense-header">' +
+        '<span class="intense-mode-badge">Intense Mode</span>' +
+        '<span class="intense-progress">Q' + (idx + 1) + ' of ' + total + '</span>' +
+      '</div>' +
+      '<div class="intense-sections">' + sectionDotsHtml + '</div>' +
+      '<div class="intense-state-indicator">' + stateIndicator + '</div>' +
+      '<div class="question-box">' + escHtml(qObj.text || '') + '</div>' +
+      (isRecording
+        ? '<div class="intense-recording-state">' +
+            '<div class="intense-status">Listening...</div>' +
+            '<div class="record-controls">' +
+              '<button class="btn record recording intense-stop-btn" data-action="intenseStop">Stop</button>' +
+              '<div class="timer" id="timer">' + formatTime(state.recorder.seconds) + '</div>' +
+            '</div>' +
+            '<p class="intense-status">Your answer is being recorded.</p>' +
+          '</div>'
+        : '<div class="intense-waiting-state">' +
+            '<p class="intense-status">Recording starts automatically when speaking finishes.</p>' +
+          '</div>') +
+    '</div>'
+  );
 }
 
-// ── Card: Intense Mode finalising ─────────────────────────────────────────────
 function renderIntenseFinalizingCard() {
-  const total   = state.questions.length;
-  const done    = state.analyses.filter(a => a && (a.status === "success" || a.status === "failed")).length;
-  const current = state.analyses.findIndex(a => a && a.status === "pending");
+  const sections = state.intense.sections;
+  const total    = sections.length;
+  const done     = sections.filter(s => s.status === 'complete' || s.status === 'failed').length;
+  const current  = sections.findIndex(s => s.status === 'active' || s.status === 'pending');
 
-  const dots = state.questions.map((_, i) => {
-    const a = state.analyses[i];
-    let cls = "intense-dot";
-    if (!a)                         cls += " intense-dot--pending";
-    else if (a.status === "pending") cls += " intense-dot--running";
-    else if (a.status === "success") cls += " intense-dot--done";
-    else if (a.status === "failed")  cls += " intense-dot--error";
-    else                             cls += " intense-dot--pending";
-    return `<div class="${cls}" title="Q${i + 1}"></div>`;
-  }).join("");
+  const sectionDotsHtml = sections.map(s => {
+    let cls = 'section-dot';
+    if (s.status === 'complete') cls += ' section-dot--complete';
+    else if (s.status === 'failed') cls += ' section-dot--failed';
+    else if (s.status === 'active') cls += ' section-dot--active';
+    return '<div class="' + cls + '"><div class="section-dot-circle"></div><div class="section-dot-label">' + escHtml(s.label) + '</div></div>';
+  }).join('');
 
   const statusLine = current >= 0
-    ? `Transcribing &amp; analysing Q${current + 1} of ${total}...`
+    ? 'Analysing: ' + escHtml(sections[current].label) + ' (' + (done + 1) + ' of ' + total + ')'
     : done < total
-      ? `Finishing up...`
-      : `Compiling your holistic review...`;
+      ? 'Finishing up...'
+      : 'Compiling your interview review...';
 
-  setCard(`
-    <div class="card">
-      <h2>Processing your answers</h2>
-      <div class="intense-dots" style="margin:20px 0">${dots}</div>
-      <p class="sim-loading-text">${statusLine}</p>
-      <div class="status"><span class="spinner"></span> Each answer takes ~20–30 s — ${done} of ${total} done</div>
-    </div>
-  `);
+  setCard(
+    '<div class="card">' +
+      '<h2>Analysing your interview</h2>' +
+      '<div class="intense-sections" style="margin:20px 0">' + sectionDotsHtml + '</div>' +
+      '<p class="sim-loading-text">' + statusLine + '</p>' +
+      '<div class="status"><span class="spinner"></span> ' + done + ' of ' + total + ' sections analysed</div>' +
+    '</div>'
+  );
 }
-
-// ── Simulation: auto-analyze after transcription ──────────────────────────────
 async function autoAnalyzeSimulation() {
   const idx = state.currentIndex;
   const answer = state.answers[idx];
@@ -1492,10 +1552,11 @@ const actions = {
       if (state.simulationRunId !== runId) return;
 
       state.questions = questions;
-      state.analyses  = questions.map(() => ({ status: "idle", promise: null, result: null, error: null }));
+      state.analyses  = questions.map(() => null);
       state.currentIndex = 0;
       state.answers = [];
       state.interviewer = data.interviewer || {};
+      initIntenseSections();
 
       deliverQuestion(0, runId);
     } catch (e) {
