@@ -12,17 +12,17 @@ def get_model():
     global _model, _force_cpu
     if _model is None:
         if _force_cpu:
-            print("Loading Whisper large-v2 model on CPU...")
-            _model = WhisperModel("large-v2", device="cpu", compute_type="int8")
+            print("Loading Whisper base model on CPU...")
+            _model = WhisperModel("base", device="cpu", compute_type="int8")
             print("Whisper model ready (CPU / int8).")
             return _model
         try:
-            print("Loading Whisper large-v2 model on CUDA...")
-            _model = WhisperModel("large-v2", device="cuda", compute_type="int8")
+            print("Loading Whisper base model on CUDA...")
+            _model = WhisperModel("base", device="cuda", compute_type="int8")
             print("Whisper model ready (CUDA / int8).")
         except Exception as e:
             print(f"CUDA load failed ({e}), falling back to CPU...")
-            _model = WhisperModel("large-v2", device="cpu", compute_type="int8")
+            _model = WhisperModel("base", device="cpu", compute_type="int8")
             print("Whisper model ready (CPU / int8).")
     return _model
 
@@ -52,7 +52,7 @@ def transcribe(audio_bytes: bytes) -> str:
                 print(f"WARNING: CUDA transcription failed ({e}), forcing CPU fallback...")
                 _model = None
                 _force_cpu = True
-                model = WhisperModel("large-v2", device="cpu", compute_type="int8")
+                model = WhisperModel("base", device="cpu", compute_type="int8")
                 _model = model
                 segments, _ = model.transcribe(
                     tmp_path,
