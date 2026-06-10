@@ -877,7 +877,7 @@ function startLevelMeter(stream) {
       const el = document.getElementById('audio-level-fill');
       if (el) el.style.width = pct + '%';
       const label = document.getElementById('audio-level-label');
-      if (label) label.textContent = pct < 5 ? 'No signal ⚠' : pct < 20 ? 'Low' : 'Good';
+      if (label) label.textContent = pct < 5 ? 'None' : pct < 20 ? 'Low' : pct < 60 ? 'Good' : 'Strong';
       _levelInterval = requestAnimationFrame(tick);
     }
     _levelInterval = requestAnimationFrame(tick);
