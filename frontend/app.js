@@ -1136,7 +1136,7 @@ async function checkFollowUp(transcript, questionText, qIdx, sIdx, runId, exchan
         conversation,
         latest_answer: transcript,
         follow_up_count: followUpCount,
-        max_follow_ups: 2,
+        max_follow_ups: 6,
         interviewer_persona: state.interviewerPersona.trim() || null,
       })
     });
