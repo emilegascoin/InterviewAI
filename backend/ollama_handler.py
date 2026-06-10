@@ -917,7 +917,7 @@ Default guidance for question {question_number}: {guidance}
 Rules:
 - Make the question specific to this JD and candidate — not generic.
 - The framing is one conversational sentence the interviewer says before the question (reference something from the JD or conversation).
-- Do NOT repeat a topic already covered in the conversation above.
+- Do NOT ask about a topic already asked in the conversation above — move on regardless of how the candidate answered. Every question must introduce a new angle or subject.
 - If a cover letter summary is provided, at least one question across the interview must probe a specific claim from it.
 
 Return ONLY valid JSON. No markdown, no commentary. Use double quotes.
