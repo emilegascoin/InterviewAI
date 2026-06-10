@@ -1415,3 +1415,16 @@ mark.filler-word {
   color: var(--muted);
   margin-top: 4px;
 }
+
+/* ── Build tag ──────────────────────────────────────────────────────────────── */
+#build-tag {
+  position: fixed;
+  bottom: 8px;
+  right: 12px;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 9999;
+  font-family: monospace;
+}
