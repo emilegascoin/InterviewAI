@@ -53,6 +53,13 @@ function devClear() {
   const el = document.getElementById('dev-log');
   if (el) el.innerHTML = '';
 }
+function devCopy() {
+  const text = _devLog.map(e => e.ts + '  ' + e.msg).join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('.dev-btn-copy');
+    if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy'; }, 1500); }
+  });
+}
 
 const SECTIONS = [
   { id: 'intro',      label: 'Introduction', questionIndices: [0] },

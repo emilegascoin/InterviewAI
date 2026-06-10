@@ -76,11 +76,12 @@
     <div id="progress" class="progress hidden"></div>
     <div id="card-container"></div>
   </div>
-  <div id="build-tag">v5.4</div>
+  <div id="build-tag">v5.5</div>
   <div id="dev-panel" class="dev-panel hidden">
     <div class="dev-panel-header">
       <span>Dev Log</span>
       <div class="dev-panel-controls">
+        <button class="dev-btn dev-btn-copy" onclick="devCopy()">Copy</button>
         <button class="dev-btn" onclick="devClear()">Clear</button>
         <button class="dev-btn" onclick="toggleDevPanel()">✕</button>
       </div>
@@ -88,6 +89,6 @@
     <div id="dev-log" class="dev-log"></div>
   </div>
   <button id="dev-toggle-btn" onclick="toggleDevPanel()" title="Toggle dev log">DEV</button>
-  <script src="/static/app.js?v=5.4"></script>
+  <script src="/static/app.js?v=5.5"></script>
 </body>
 </html>
