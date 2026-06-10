@@ -9,6 +9,9 @@ const state = {
   useCv: false,
   cvLoaded: false,
   cvFilename: null,
+  coverLetterLoaded: false,
+  coverLetterFilename: null,
+  interviewerPersona: "",
   // Simulation fields
   sessionType: "practice",
   interviewer: null,
@@ -151,10 +154,28 @@ function renderJdCard() {
        </label>
        <input type="file" id="cv-file-input" accept=".pdf,.docx,.txt" style="display:none">`;
 
+  const clSection = state.coverLetterLoaded
+    ? `<div class="cv-loaded">
+        <svg class="cv-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span class="cv-filename">${escHtml(state.coverLetterFilename || "Cover letter loaded")}</span>
+        <button class="cv-delete" data-action="deleteCoverLetter" title="Remove cover letter">✕</button>
+       </div>
+       <span class="cv-status-muted">used when uploaded</span>`
+    : `<label class="btn secondary cv-upload-btn" for="cl-file-input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Upload Cover Letter
+       </label>
+       <input type="file" id="cl-file-input" accept=".pdf,.txt" style="display:none">`;
+
   setCard(`
     <div class="card">
       <h2>Paste Job Description</h2>
       <textarea id="jd-input" placeholder="Paste the job description here..."></textarea>
+
+      <div class="persona-row">
+        <span class="mode-toggle-label">Interviewer Persona</span>
+        <textarea id="persona-input" class="persona-input" placeholder="Interviewer persona (optional) — e.g. 'Be an aggressive interviewer who focuses on system design' or 'Second round — background covered, go deep on technical skills'"></textarea>
+      </div>
 
       <div class="mode-toggle-row">
         <span class="mode-toggle-label">Interview Type</span>
@@ -165,7 +186,7 @@ function renderJdCard() {
       </div>
 
       <div class="cv-row">
-        <span class="mode-toggle-label">CV</span>
+        <span class="mode-toggle-label">Documents</span>
         <div class="cv-controls">
           ${cvSection}
           <label class="toggle-label ${!cvLoaded ? "toggle-label--disabled" : ""}">
@@ -173,6 +194,7 @@ function renderJdCard() {
             <span class="toggle-track"></span>
             <span class="toggle-text">Use CV</span>
           </label>
+          ${clSection}
         </div>
         <div class="cv-status" id="cv-status"></div>
       </div>
@@ -207,13 +229,33 @@ function renderJdCard() {
     });
   }
 
-  // Wire up file input (not caught by delegation since it's a change event)
+  // Restore and save persona
+  const personaInput = document.getElementById("persona-input");
+  if (personaInput) {
+    if (state.interviewerPersona) personaInput.value = state.interviewerPersona;
+    personaInput.addEventListener("input", () => {
+      state.interviewerPersona = personaInput.value;
+      localStorage.setItem("interviewai_persona", personaInput.value);
+    });
+  }
+
+  // Wire up CV file input (not caught by delegation since it's a change event)
   const fileInput = document.getElementById("cv-file-input");
   if (fileInput) {
     fileInput.addEventListener("change", async e => {
       const file = e.target.files[0];
       if (file) await actions.uploadCv(file);
       fileInput.value = "";
+    });
+  }
+
+  // Wire up cover letter file input
+  const clFileInput = document.getElementById("cl-file-input");
+  if (clFileInput) {
+    clFileInput.addEventListener("change", async e => {
+      const file = e.target.files[0];
+      if (file) await actions.uploadCoverLetter(file);
+      clFileInput.value = "";
     });
   }
 }
@@ -1092,6 +1134,7 @@ async function checkFollowUp(transcript, questionText, qIdx, sIdx, runId, exchan
         latest_answer: transcript,
         follow_up_count: followUpCount,
         max_follow_ups: 2,
+        interviewer_persona: state.interviewerPersona.trim() || null,
       })
     });
 
@@ -1470,7 +1513,9 @@ const actions = {
         body: JSON.stringify({
           job_description: jd,
           interview_mode: state.interviewMode,
-          use_cv: state.useCv && state.cvLoaded
+          use_cv: state.useCv && state.cvLoaded,
+          use_cover_letter: state.coverLetterLoaded,
+          interviewer_persona: state.interviewerPersona.trim() || null,
         })
       });
       const rawQuestions = data.questions || [];
@@ -1507,7 +1552,9 @@ const actions = {
         body: JSON.stringify({
           job_description: jd,
           interview_mode: state.interviewMode,
-          use_cv: state.useCv && state.cvLoaded
+          use_cv: state.useCv && state.cvLoaded,
+          use_cover_letter: state.coverLetterLoaded,
+          interviewer_persona: state.interviewerPersona.trim() || null,
         })
       });
 
@@ -1688,7 +1735,9 @@ const actions = {
         body: JSON.stringify({
           job_description: jd,
           interview_mode: state.interviewMode,
-          use_cv: state.useCv && state.cvLoaded
+          use_cv: state.useCv && state.cvLoaded,
+          use_cover_letter: state.coverLetterLoaded,
+          interviewer_persona: state.interviewerPersona.trim() || null,
         })
       });
 
@@ -1736,7 +1785,31 @@ const actions = {
       const statusEl = document.getElementById("cv-status");
       if (statusEl) statusEl.textContent = "Failed to remove CV: " + e.message;
     }
-  }
+  },
+
+  uploadCoverLetter: async (file) => {
+    const statusEl = document.getElementById("cv-status");
+    if (statusEl) statusEl.textContent = "Uploading cover letter...";
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const data = await requestJson(`${API}/cover-letter/upload`, { method: "POST", body: formData });
+      setState({ coverLetterLoaded: true, coverLetterFilename: data.filename });
+      if (statusEl) statusEl.textContent = "";
+    } catch (e) {
+      if (statusEl) statusEl.textContent = "Upload failed: " + e.message;
+    }
+  },
+
+  deleteCoverLetter: async () => {
+    try {
+      await requestJson(`${API}/cover-letter`, { method: "DELETE" });
+      setState({ coverLetterLoaded: false, coverLetterFilename: null });
+    } catch (e) {
+      const statusEl = document.getElementById("cv-status");
+      if (statusEl) statusEl.textContent = "Failed to remove cover letter: " + e.message;
+    }
+  },
 };
 
 // ── Event delegation ──────────────────────────────────────────────────────────
@@ -1760,10 +1833,14 @@ async function boot() {
   const savedJd = localStorage.getItem("interviewai_jd");
   if (savedJd) state.jobDescription = savedJd;
 
+  const savedPersona = localStorage.getItem("interviewai_persona");
+  if (savedPersona) state.interviewerPersona = savedPersona;
+
   try {
-    const [settings, cvStatus] = await Promise.all([
+    const [settings, cvStatus, clStatus] = await Promise.all([
       requestJson(`${API}/settings`).catch(() => ({})),
-      requestJson(`${API}/cv/status`).catch(() => ({}))
+      requestJson(`${API}/cv/status`).catch(() => ({})),
+      requestJson(`${API}/cover-letter/status`).catch(() => ({}))
     ]);
 
     if (settings.interview_mode) state.interviewMode = settings.interview_mode;
@@ -1773,6 +1850,11 @@ async function boot() {
     if (cvStatus.loaded) {
       state.cvLoaded = true;
       state.cvFilename = cvStatus.filename || null;
+    }
+
+    if (clStatus.loaded) {
+      state.coverLetterLoaded = true;
+      state.coverLetterFilename = clStatus.filename || null;
     }
   } catch (_) { /* fall through with defaults */ }
 

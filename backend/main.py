@@ -7,6 +7,7 @@ from pydantic import BaseModel
 import whisper_handler
 import ollama_handler
 import cv_handler
+import cover_letter_handler
 import tts_handler
 import os
 import json
@@ -155,11 +156,47 @@ def delete_cv():
     return {"loaded": False}
 
 
+# ── Cover Letter ──────────────────────────────────────────────────────────────
+@app.post("/cover-letter/upload")
+async def upload_cover_letter(file: UploadFile = File(...)):
+    allowed = {".pdf", ".txt"}
+    ext = os.path.splitext(file.filename.lower())[1]
+    if ext not in allowed:
+        raise HTTPException(status_code=400, detail="Only PDF and TXT files are supported.")
+    try:
+        file_bytes = await file.read()
+        if len(file_bytes) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+        text = cover_letter_handler.extract_text(file_bytes, file.filename)
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="Could not extract text from file.")
+        meta = cover_letter_handler.save_cover_letter(text, file.filename)
+        return {"loaded": True, **meta}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/cover-letter/status")
+def cover_letter_status():
+    status = cover_letter_handler.get_cover_letter_status()
+    if status:
+        return {"loaded": True, **status}
+    return {"loaded": False}
+
+@app.delete("/cover-letter")
+def delete_cover_letter_ep():
+    cover_letter_handler.delete_cover_letter()
+    return {"loaded": False}
+
+
 # ── Interview ─────────────────────────────────────────────────────────────────
 class JobDescRequest(BaseModel):
     job_description: str
     interview_mode: str = "technical"
     use_cv: bool = False
+    use_cover_letter: bool = False
+    interviewer_persona: str | None = None
 
 
 class AnalyzeRequest(BaseModel):
@@ -172,6 +209,8 @@ class SimulationRequest(BaseModel):
     job_description: str
     interview_mode: str = "technical"
     use_cv: bool = False
+    use_cover_letter: bool = False
+    interviewer_persona: str | None = None
 
 
 class AnalyzeSimulationRequest(BaseModel):
@@ -205,6 +244,7 @@ class FollowUpCheckRequest(BaseModel):
     latest_answer: str
     follow_up_count: int = 0
     max_follow_ups: int = 2
+    interviewer_persona: str | None = None
 
 
 class SectionAnalyzeRequest(BaseModel):
@@ -227,10 +267,15 @@ async def generate_questions(req: JobDescRequest):
         cv_summary = None
         if req.use_cv:
             cv_summary = cv_handler.get_cv_summary()
+        cover_letter = None
+        if req.use_cover_letter:
+            cover_letter = cover_letter_handler.get_cover_letter_text()
         questions = await ollama_handler.generate_questions(
             req.job_description,
             req.interview_mode,
-            cv_summary
+            cv_summary,
+            cover_letter,
+            req.interviewer_persona,
         )
         return {"questions": questions}
     except Exception as e:
@@ -243,10 +288,15 @@ async def generate_simulation_ep(req: SimulationRequest):
         cv_summary = None
         if req.use_cv:
             cv_summary = cv_handler.get_cv_summary()
+        cover_letter = None
+        if req.use_cover_letter:
+            cover_letter = cover_letter_handler.get_cover_letter_text()
         result = await ollama_handler.generate_simulation(
             req.job_description,
             req.interview_mode,
-            cv_summary
+            cv_summary,
+            cover_letter,
+            req.interviewer_persona,
         )
         return result
     except Exception as e:
@@ -343,6 +393,7 @@ async def follow_up_check_ep(req: FollowUpCheckRequest):
             req.latest_answer,
             req.follow_up_count,
             req.max_follow_ups,
+            req.interviewer_persona,
         )
         return result
     except Exception as e:
