@@ -1281,9 +1281,6 @@ function renderIntenseQuestionCard() {
     const progressEl = existing.querySelector('.intense-progress');
     if (progressEl) progressEl.textContent = 'Q' + (idx + 1) + ' of ' + total;
 
-    const qBox = existing.querySelector('.question-box');
-    if (qBox) qBox.textContent = qObj.text || '';
-
     const stateEl = existing.querySelector('.intense-state-indicator');
     if (stateEl) stateEl.innerHTML = stateIndicator;
 
@@ -1327,7 +1324,6 @@ function renderIntenseQuestionCard() {
       '</div>' +
       '<div class="intense-sections">' + sectionDotsHtml + '</div>' +
       '<div class="intense-state-indicator">' + stateIndicator + '</div>' +
-      '<div class="question-box">' + escHtml(qObj.text || '') + '</div>' +
       (isRecording
         ? '<div class="intense-recording-state">' +
             '<div class="intense-status">Listening...</div>' +
