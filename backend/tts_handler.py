@@ -68,5 +68,5 @@ def synthesize(text: str) -> bytes:
     voice = _get_voice()
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wav_file:
-        voice.synthesize(text, wav_file)
+        voice.synthesize_wav(text, wav_file)
     return buf.getvalue()
