@@ -867,9 +867,10 @@ function startLevelMeter(stream) {
     const source = _audioCtx.createMediaStreamSource(stream);
     const analyser = _audioCtx.createAnalyser();
     analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.25;
     source.connect(analyser);
     const buf = new Uint8Array(analyser.frequencyBinCount);
-    _levelInterval = setInterval(() => {
+    function tick() {
       analyser.getByteFrequencyData(buf);
       const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
       const pct = Math.min(100, avg * 2.5);
@@ -877,12 +878,14 @@ function startLevelMeter(stream) {
       if (el) el.style.width = pct + '%';
       const label = document.getElementById('audio-level-label');
       if (label) label.textContent = pct < 5 ? 'No signal ⚠' : pct < 20 ? 'Low' : 'Good';
-    }, 2000);
+      _levelInterval = requestAnimationFrame(tick);
+    }
+    _levelInterval = requestAnimationFrame(tick);
   } catch (e) { console.warn('Level meter failed:', e); }
 }
 
 function stopLevelMeter() {
-  clearInterval(_levelInterval); _levelInterval = null;
+  if (_levelInterval) { cancelAnimationFrame(_levelInterval); _levelInterval = null; }
   try { if (_audioCtx) { _audioCtx.close(); _audioCtx = null; } } catch (_) {}
 }
 
