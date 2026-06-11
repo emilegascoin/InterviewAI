@@ -175,7 +175,6 @@ function renderJdCard() {
   const cvLoaded = state.cvLoaded;
   const useCvDisabled = !cvLoaded ? "disabled" : "";
   const useCvChecked = cvLoaded && state.useCv ? "checked" : "";
-  const alwaysShowChecked = state.alwaysShowQuestion ? "checked" : "";
 
   const cvSection = cvLoaded
     ? `<div class="cv-loaded">
@@ -232,15 +231,6 @@ function renderJdCard() {
           ${clSection}
         </div>
         <div class="cv-status" id="cv-status"></div>
-      </div>
-
-      <div class="settings-row">
-        <span class="mode-toggle-label">Display</span>
-        <label class="toggle-label">
-          <input type="checkbox" class="toggle-input" data-action="toggleAlwaysShow" ${alwaysShowChecked}>
-          <span class="toggle-track"></span>
-          <span class="toggle-text">Always show question</span>
-        </label>
       </div>
 
       <div class="card-actions">
@@ -1778,11 +1768,6 @@ const actions = {
     await saveSettings();
   },
 
-  toggleAlwaysShow: async (e) => {
-    state.alwaysShowQuestion = e.target.checked;
-    await saveSettings();
-  },
-
   setRound: async (e) => {
     const round = e.target.closest("[data-round]")?.dataset.round;
     if (!round || !["first", "technical", "final"].includes(round)) return;
@@ -1792,7 +1777,10 @@ const actions = {
     state.interviewerPersona = ROUND_PERSONA_PRESETS[round];
     localStorage.setItem("interviewai_persona", state.interviewerPersona);
     state.interviewRound = round;
-    render();
+    // Update in place (no full re-render) so the card doesn't flash
+    const ta = document.getElementById("persona-input");
+    if (ta) { ta.value = state.interviewerPersona; autoGrowPersona(ta); }
+    syncRoundChips();
   },
 
   updatePersona: async (e) => {
