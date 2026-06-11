@@ -49,6 +49,14 @@ function devLog(msg, type = 'info') {
     el.scrollTop = el.scrollHeight;
   }
 }
+// Show a prompt dump only the first time each kind occurs in a session, then never again.
+const _promptShown = new Set();
+function promptOnce(kind, prompt) {
+  if (!prompt || _promptShown.has(kind)) return '';
+  _promptShown.add(kind);
+  return '\n\n--- PROMPT (' + kind + ', shown once) ---\n' + prompt;
+}
+function resetPromptLog() { _promptShown.clear(); }
 function toggleDevPanel() {
   const panel = document.getElementById('dev-panel');
   if (panel) panel.classList.toggle('hidden');
@@ -1171,7 +1179,7 @@ async function checkFollowUp(transcript, questionText, qIdx, sIdx, runId, exchan
 
     if (state.simulationRunId !== runId || state.intense.activeExchangeId !== exchangeId) return;
 
-    devLog('Q' + (qIdx+1) + ' follow-up decision in ' + ((Date.now()-_fupT0)/1000).toFixed(1) + 's: ' + data.decision + '\nText: ' + (data.text||'') + (data._prompt ? '\n\n--- PROMPT ---\n' + data._prompt : ''), 'result');
+    devLog('Q' + (qIdx+1) + ' follow-up decision in ' + ((Date.now()-_fupT0)/1000).toFixed(1) + 's: ' + data.decision + '\nText: ' + (data.text||'') + promptOnce('follow-up-check', data._prompt), 'result');
 
     if (data.decision === 'follow_up' && data.text) {
       section.followUpCount++;
@@ -1266,7 +1274,7 @@ async function advanceIntense(qIdx, sIdx, runId) {
     };
     state.questions = questions;
 
-    devLog('Q' + (nextQIdx+1) + ' generated\nFraming: ' + (data.framing||'') + '\nQuestion: ' + data.question + (data._prompt ? '\n\n--- PROMPT ---\n' + data._prompt : ''), 'result');
+    devLog('Q' + (nextQIdx+1) + ' generated\nFraming: ' + (data.framing||'') + '\nQuestion: ' + data.question + promptOnce('generate-next-question', data._prompt), 'result');
     deliverQuestion(nextQIdx, runId);
   } catch (e) {
     devLog('generate-next-question failed: ' + e.message, 'error');
@@ -1820,6 +1828,7 @@ const actions = {
       answers: []
     });
     state.intense.usedTopicKeys = [];
+    resetPromptLog();
 
     try {
       // Generate first question dynamically

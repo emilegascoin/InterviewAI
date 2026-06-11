@@ -535,6 +535,11 @@ header h1 {
 .card-back-btn:hover { background: var(--border); color: var(--text); }
 @media print { .card-back-btn { display: none !important; } }
 
+/* Clear the back arrow so card titles don't overlap it */
+.card-back-btn ~ h1,
+.card-back-btn ~ h2,
+.card-back-btn ~ h3 { padding-left: 34px; }
+
 .card h2 {
   font-size: 1rem;
   font-weight: 600;

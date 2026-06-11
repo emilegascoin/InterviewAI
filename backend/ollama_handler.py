@@ -1,5 +1,6 @@
 import httpx
 import json
+import random
 import re
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
@@ -886,13 +887,29 @@ async def generate_next_question(
             "_prompt": "",
         }
 
+    if question_number == 1 and interview_round == "first":
+        question = random.choice([
+            "Tell me a bit about yourself and what brought you to this role.",
+            "To get started, walk me through your background at a high level.",
+            "What is a project you have really enjoyed working on, and why?",
+        ])
+        return {
+            "phase": "intro",
+            "question": question,
+            "framing": "",
+            "competency": "motivation",
+            "topic_key": "intro_background",
+            "evaluation_mode": "screening",
+            "_prompt": "",
+        }
+
     cv_block = ""
     if cv_summary:
         cv_block = f"\n\n<cv_summary>\n{cv_summary}\n</cv_summary>"
 
     cl_block = ""
     if cover_letter_summary:
-        cl_block = f"\n\n<cover_letter>\nThis is a summary of the candidate's cover letter. You MUST reference specific claims from it in at least one question across the interview.\n{cover_letter_summary}\n</cover_letter>"
+        cl_block = f"\n\n<cover_letter>\nThis is a summary of the candidate's cover letter. You MUST reference specific claims from it in at least one question from Q2 through Q7 only. Never reference cover-letter claims in Q1 or Q8.\n{cover_letter_summary}\n</cover_letter>"
 
     persona_block = ""
     if interviewer_persona:
@@ -915,6 +932,15 @@ async def generate_next_question(
     if normalized_used_topic_keys:
         topics_block = "\n\nTopics already covered (do not repeat):\n" + "\n".join(
             f"- {key}" for key in normalized_used_topic_keys
+        )
+
+    q1_policy_block = ""
+    if question_number == 1:
+        q1_policy_block = (
+            "Q1 HARD POLICY: The opener must not name any specific tool, company, "
+            "or project. It must not reference cover-letter claims. It must not use "
+            "'Given your background in...'. It must be a broad opener answerable by "
+            "any candidate for this role."
         )
 
     # Default phase guidance (overridden by persona if set)
@@ -963,11 +989,13 @@ Job Description:
 Default guidance for question {question_number}: {guidance}
 {round_style_block}
 {persona_block}
+{q1_policy_block}
 Rules:
 - Make the question specific to this JD and candidate — not generic.
+- For Q1 only, override candidate-specific tailoring with the Q1 hard policy above.
 - The framing is one conversational sentence the interviewer says before the question (reference something from the JD or conversation).
 - Do NOT ask about a topic already asked in the conversation above — move on regardless of how the candidate answered. Every question must introduce a new angle or subject.
-- If a cover letter summary is provided, at least one question across the interview must probe a specific claim from it.
+- If a cover letter summary is provided, at least one question from Q2 through Q7 must probe a specific claim from it. Never reference cover-letter claims in Q1 or Q8.
 - Phrasing rule for all rounds: ban robotic corporate stems. Do NOT open questions with "Given your background in X...", "Can you walk me through a specific project where...", or similar corporate templates.
 - Keep the question short, natural, and focused on one idea. Avoid multi-clause run-on questions; put any needed context in the framing instead.
 - The question should sound like something a real interviewer would say out loud, for example "What is your favourite project you have worked on?" or "How do you usually approach a new design problem?"
