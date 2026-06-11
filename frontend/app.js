@@ -615,6 +615,16 @@ function renderSimHolisticReviewCard() {
   const bestQ = (bestIdx != null && state.questions[bestIdx]) ? state.questions[bestIdx].text : "";
   const worstQ = (worstIdx != null && state.questions[worstIdx]) ? state.questions[worstIdx].text : "";
 
+  const topicCounts = new Map();
+  (state.questions || []).forEach(q => {
+    const topicKey = String((q && q.topicKey) || "").trim();
+    if (!topicKey) return;
+    topicCounts.set(topicKey, (topicCounts.get(topicKey) || 0) + 1);
+  });
+  const topicChips = Array.from(topicCounts.entries()).map(([topicKey, count]) => `
+    <span class="coverage-chip">${escHtml(humanizeTopicKey(topicKey))}${count > 1 ? ` <span class="coverage-count">x${count}</span>` : ""}</span>
+  `).join("");
+
   setCard(`
     <div class="card done-card">
       <div class="done-mode-badge">Simulation Complete</div>
@@ -633,6 +643,11 @@ function renderSimHolisticReviewCard() {
         ` : ""}
         <p class="done-avg" style="margin-top:8px">Average score: <strong>${avgScore}/10</strong> across ${state.questions.length} questions</p>
       </div>
+
+      ${topicChips ? `
+        <div class="review-section-label">Topics Covered</div>
+        <div class="coverage-chip-row">${topicChips}</div>
+      ` : ""}
 
       ${competencyItems ? `
         <div class="review-section-label">Competencies</div>
@@ -746,6 +761,14 @@ function fillerCard(count) {
 
 function starItem(label, covered) {
   return `<span class="star-item ${covered ? "covered" : "missing"}">${label}</span>`;
+}
+
+function humanizeTopicKey(key) {
+  return String(key ?? "")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, ch => ch.toUpperCase());
 }
 
 const FILLER_RE = /\b(um+|uh+|like|you know|sort of|kind of|basically|whatever|stuff|i guess|i mean|okay|alright|right)\b/gi;

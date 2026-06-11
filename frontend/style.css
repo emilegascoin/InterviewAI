@@ -1028,6 +1028,29 @@ mark.filler-word {
 .evidence-weak { background: rgba(239,68,68,0.08); color: #fca5a5; }
 .evidence-missing { background: rgba(100,116,139,0.15); color: var(--muted); }
 
+/* Topics covered */
+.coverage-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.coverage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 5px 10px;
+}
+.coverage-count {
+  color: var(--accent);
+}
+
 /* Strength/risk items */
 .sim-finding {
   background: var(--surface2);
