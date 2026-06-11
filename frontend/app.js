@@ -12,6 +12,20 @@ const ROUND_LABELS = {
   final: "Final",
 };
 
+// Grow the persona textarea to fit its content (no inner scrollbar)
+function autoGrowPersona(el) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + "px";
+}
+
+// Highlight the round chip whose preset matches the current persona; none if edited
+function syncRoundChips() {
+  document.querySelectorAll(".persona-round-bar .round-chip").forEach(btn => {
+    btn.classList.toggle("active", state.interviewerPersona === ROUND_PERSONA_PRESETS[btn.dataset.round]);
+  });
+}
+
 const state = {
   phase: "jd",
   questions: [],
@@ -195,15 +209,14 @@ function renderJdCard() {
 
       <div class="persona-row">
         <span class="mode-toggle-label">Interviewer Persona</span>
-        <textarea id="persona-input" class="persona-input" data-action="updatePersona" placeholder="Interviewer persona (optional) - e.g. 'Be an aggressive interviewer who focuses on system design' or 'Second round - background covered, go deep on technical skills'">${escHtml(state.interviewerPersona)}</textarea>
-      </div>
-
-      <div class="mode-toggle-row">
-        <span class="mode-toggle-label">Round</span>
-        <div class="mode-toggle" role="group" aria-label="Interview round">
-          <button class="mode-btn ${state.interviewRound === "first" ? "active" : ""}" data-action="setRound" data-round="first" type="button">1st Round (Conversational)</button>
-          <button class="mode-btn ${state.interviewRound === "technical" ? "active" : ""}" data-action="setRound" data-round="technical" type="button">2nd Round (Technical)</button>
-          <button class="mode-btn ${state.interviewRound === "final" ? "active" : ""}" data-action="setRound" data-round="final" type="button">Final</button>
+        <div class="persona-box">
+          <textarea id="persona-input" class="persona-input" data-action="updatePersona" rows="1" placeholder="Interviewer persona (optional) - e.g. 'Be an aggressive interviewer who focuses on system design' or 'Second round - background covered, go deep on technical skills'">${escHtml(state.interviewerPersona)}</textarea>
+          <div class="persona-round-bar" role="group" aria-label="Interview round">
+            <span class="persona-round-label">Round</span>
+            <button class="round-chip ${state.interviewerPersona === ROUND_PERSONA_PRESETS.first ? "active" : ""}" data-action="setRound" data-round="first" type="button">Conversational</button>
+            <button class="round-chip ${state.interviewerPersona === ROUND_PERSONA_PRESETS.technical ? "active" : ""}" data-action="setRound" data-round="technical" type="button">Technical</button>
+            <button class="round-chip ${state.interviewerPersona === ROUND_PERSONA_PRESETS.final ? "active" : ""}" data-action="setRound" data-round="final" type="button">Final</button>
+          </div>
         </div>
       </div>
 
@@ -237,6 +250,9 @@ function renderJdCard() {
       <div class="status" id="jd-status"></div>
     </div>
   `);
+
+  // Auto-size the persona box to its content
+  autoGrowPersona(document.getElementById("persona-input"));
 
   // Restore saved JD
   const textarea = document.getElementById("jd-input");
@@ -1643,54 +1659,6 @@ const actions = {
     }
   },
 
-  startSimulation: async () => {
-    const textarea = document.getElementById("jd-input");
-    const jd = textarea ? textarea.value.trim() : "";
-    if (!jd) {
-      document.getElementById("jd-status").textContent = "Please paste a job description first.";
-      return;
-    }
-
-    setState({ phase: "sim_loading", sessionType: "simulation", jobDescription: jd });
-
-    try {
-      const data = await requestJson(`${API}/generate-simulation`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          job_description: jd,
-          interview_mode: state.interviewMode,
-          use_cv: state.useCv && state.cvLoaded,
-          use_cover_letter: state.coverLetterLoaded,
-          interviewer_persona: state.interviewerPersona.trim() || null,
-        })
-      });
-
-      const questions = (data.questions || []).map(q => ({
-        text: q.question,
-        phase: q.phase,
-        framing: q.framing,
-        competency: q.competency,
-        evaluationMode: q.evaluation_mode
-      }));
-
-      if (!questions.length) throw new Error("No questions returned");
-
-      setState({
-        phase: "question",
-        questions,
-        currentIndex: 0,
-        answers: [],
-        interviewer: data.interviewer || {},
-        questionVisible: false
-      });
-    } catch (e) {
-      setState({ phase: "jd", sessionType: "practice" });
-      const statusEl = document.getElementById("jd-status");
-      if (statusEl) statusEl.textContent = "Simulation error: " + e.message;
-    }
-  },
-
   simContinue: async () => {
     const isLast = state.currentIndex === state.questions.length - 1;
     if (isLast) {
@@ -1830,6 +1798,8 @@ const actions = {
   updatePersona: async (e) => {
     state.interviewerPersona = e.target.value;
     localStorage.setItem("interviewai_persona", state.interviewerPersona);
+    autoGrowPersona(e.target);
+    syncRoundChips();
   },
 
   uploadCv: handleCvUpload,

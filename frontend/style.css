@@ -239,29 +239,78 @@ header h1 {
   gap: 6px;
 }
 
-.persona-input {
-  width: 100%;
-  min-height: 60px;
-  max-height: 120px;
-  resize: vertical;
+/* Bordered container holding the textarea + the attached round bar */
+.persona-box {
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 8px;
-  color: var(--text);
-  font-size: 13px;
-  font-family: inherit;
-  padding: 8px 12px;
-  line-height: 1.5;
-  outline: none;
+  overflow: hidden;
   transition: border-color 0.2s;
 }
 
-.persona-input:focus {
+.persona-box:focus-within {
   border-color: var(--accent);
+}
+
+.persona-input {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  resize: none;
+  overflow: hidden;          /* grows via JS instead of scrolling */
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  padding: 10px 12px;
+  line-height: 1.5;
+  outline: none;
 }
 
 .persona-input::placeholder {
   color: var(--muted);
+}
+
+/* Round selector attached to the bottom of the persona box */
+.persona-round-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.persona-round-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-right: 2px;
+}
+
+.round-chip {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.round-chip:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.round-chip.active {
+  background: var(--accent);
+  color: #fff;
 }
 
 /* ── Use CV toggle (checkbox-as-pill) ────────────────────────────────────── */
