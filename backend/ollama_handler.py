@@ -41,10 +41,38 @@ FILLER_PATTERN = re.compile(
     r"i guess|i mean|okay|alright|right)\b",
     re.IGNORECASE
 )
+BANNED_QUESTION_STEMS = (
+    re.compile(r"^\s*given\b", re.IGNORECASE),
+    re.compile(r"\bwalk me through\b", re.IGNORECASE),
+)
 
 
 def count_fillers(text: str) -> int:
     return len(FILLER_PATTERN.findall(text))
+
+
+def find_banned_question_stem(*texts: str) -> str | None:
+    for text in texts:
+        for pattern in BANNED_QUESTION_STEMS:
+            match = pattern.search(text or "")
+            if match:
+                return match.group(0)
+    return None
+
+
+def rewrite_banned_question_stems(text: str) -> str:
+    rewritten = re.sub(r"\bwalk me through\b", "tell me about", text or "", flags=re.IGNORECASE)
+    rewritten = re.sub(
+        r"^\s*given\b[^,]*,\s*",
+        "",
+        rewritten,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    rewritten = re.sub(r"^\s*given\s+", "", rewritten, count=1, flags=re.IGNORECASE)
+    if rewritten:
+        rewritten = rewritten[0].upper() + rewritten[1:]
+    return rewritten
 
 
 def insufficient_answer_result(filler_count: int, is_closing: bool = False) -> dict:
@@ -887,12 +915,25 @@ async def generate_next_question(
             "_prompt": "",
         }
 
-    if question_number == 1 and interview_round == "first":
-        question = random.choice([
-            "Tell me a bit about yourself and what brought you to this role.",
-            "To get started, walk me through your background at a high level.",
-            "What is a project you have really enjoyed working on, and why?",
-        ])
+    if question_number == 1:
+        opener_pools = {
+            "first": [
+                "Tell me a bit about yourself and what brought you to this role.",
+                "To get started, walk me through your background at a high level.",
+                "What is a project you have really enjoyed working on, and why?",
+            ],
+            "technical": [
+                "Tell me about the kind of technical work you have been doing recently.",
+                "What kinds of problems have you been solving in your recent work?",
+                "To start, give me a high-level picture of your recent engineering experience.",
+            ],
+            "final": [
+                "To open, tell me what you are looking for in your next role.",
+                "Give me the high-level story of your career so far.",
+                "What kind of team and work environment brings out your best?",
+            ],
+        }
+        question = random.choice(opener_pools.get(interview_round, opener_pools["first"]))
         return {
             "phase": "intro",
             "question": question,
@@ -1029,6 +1070,18 @@ Return ONLY valid JSON. No markdown, no commentary. Use double quotes.
             "Generate a question on a completely different topic."
         )
         data, prompt = await generate_with_prompt(retry_instruction)
+
+    banned_stem = find_banned_question_stem(data.get("question", ""), data.get("framing", ""))
+    if banned_stem:
+        retry_instruction = (
+            f'- Your previous question/framing used the banned phrasing "{banned_stem}". '
+            'Do NOT use "Given..." openers or "walk me through". '
+            "Ask a short, direct, natural question."
+        )
+        data, prompt = await generate_with_prompt(retry_instruction)
+        if find_banned_question_stem(data.get("question", ""), data.get("framing", "")):
+            data["question"] = rewrite_banned_question_stems(data.get("question", ""))
+            data["framing"] = rewrite_banned_question_stems(data.get("framing", ""))
 
     # Validate required keys
     for key in ("phase", "question", "framing", "competency", "evaluation_mode", "topic_key"):
