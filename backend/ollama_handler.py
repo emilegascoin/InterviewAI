@@ -934,14 +934,60 @@ async def generate_next_question(
             ],
         }
         question = random.choice(opener_pools.get(interview_round, opener_pools["first"]))
+        round_tone = {
+            "first": "warm and friendly",
+            "technical": "direct and professional",
+            "final": "senior and holistic",
+        }.get(interview_round, "warm and friendly")
+        persona_block = ""
+        if interviewer_persona:
+            persona_block = f"\n\nInterviewer persona, if relevant to tone:\n<interviewer_persona>\n{interviewer_persona[:1000]}\n</interviewer_persona>"
+
+        framing_prompt = f"""You are the interviewer opening a {interview_round} interview. Your tone should be {round_tone}.
+
+Write only the short framing the interviewer says immediately before the opener question.
+
+Output requirements:
+- ONE to TWO short sentences total.
+- Include a brief greeting plus ONE sentence of context about the role/company drawn from the Job Description, ending with a soft lead-in such as "so to start,".
+- CRITICAL: do NOT ask the actual question. The question is delivered separately right after this framing.
+- The framing must not contain a question.
+- Use the company name ONLY if it literally appears in the Job Description.
+- Light inference is allowed for warmth, but ONLY soft abstractions from the Job Description.
+- Do NOT invent concrete facts: no numbers, no named products, no customer names, no team-size claims, no funding/stage/market claims, and no specific tools or tech not mentioned in the Job Description.
+- Keep it conversational and concise.
+
+Job Description:
+<job_description>
+{job_description.strip()}
+</job_description>{persona_block}
+
+Return ONLY valid JSON. No markdown, no commentary. Use double quotes.
+{{"framing": "Thanks for taking the time today. This role seems focused on ..., so to start,"}}"""
+
+        fallback_framing = "Thanks for taking the time today - to start, I would love to hear a bit about you."
+        framing = fallback_framing
+        try:
+            raw_framing = await generate(framing_prompt, json_mode=True)
+            start = raw_framing.find("{")
+            end = raw_framing.rfind("}") + 1
+            if start == -1 or end == 0:
+                raise ValueError("Model returned no valid JSON")
+            framing_data = json.loads(raw_framing[start:end])
+            generated_framing = str(framing_data.get("framing", "")).strip()
+            if generated_framing:
+                framing = generated_framing
+        except Exception:
+            framing = fallback_framing
+
         return {
             "phase": "intro",
             "question": question,
-            "framing": "",
+            "framing": framing,
             "competency": "motivation",
             "topic_key": "intro_background",
             "evaluation_mode": "screening",
-            "_prompt": "",
+            "_prompt": framing_prompt,
         }
 
     cv_block = ""
