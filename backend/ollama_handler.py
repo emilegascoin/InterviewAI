@@ -998,28 +998,6 @@ async def generate_next_question(
 
     phase, eval_mode, guidance = phase_map.get(question_number, ("behavioral", "star", "Ask a relevant follow-up question based on the conversation so far."))
 
-    round_key = interview_round if interview_round in ("first", "technical", "final") else "first"
-    round_style_map = {
-        "first": (
-            "Tone: warm, exploratory, conversational.\n"
-            "Emphasis: design process, portfolio walkthrough, motivation, and fit.\n"
-            "For technical-phase questions (Q6-Q7), ask about approach, judgment, how the candidate thinks, and how they debug. Do NOT ask deep syntax trivia."
-        ),
-        "technical": (
-            "Tone: rigorous and probing, with minimal small talk.\n"
-            "Emphasis: technical depth, code reading, implementation tradeoffs, and system design.\n"
-            "For technical-phase questions (Q6-Q7), go deeper on the candidate's technical choices and reasoning."
-        ),
-        "final": (
-            "Tone: senior and holistic.\n"
-            "Emphasis: culture fit, team dynamics, scenario judgment, decision-making, and how the candidate would work with the team."
-        ),
-    }
-    round_style_block = f"""
-Interview round style ({round_key}):
-- This changes tone and emphasis only. It must NOT change the phase order, question number mapping, or evaluation mode.
-{round_style_map[round_key]}"""
-
     def build_prompt(retry_instruction: str = "") -> str:
         return f"""You are conducting a live job interview. Generate question {question_number} of {total_questions}.
 
@@ -1028,7 +1006,6 @@ Job Description:
 {cv_block}{cl_block}{history_block}{topics_block}
 
 Default guidance for question {question_number}: {guidance}
-{round_style_block}
 {persona_block}
 {q1_policy_block}
 Rules:

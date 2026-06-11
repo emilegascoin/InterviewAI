@@ -1,5 +1,17 @@
 const API = "http://localhost:8000";
 
+const ROUND_PERSONA_PRESETS = {
+  first: "You are a friendly hiring manager running a first-round conversational interview. Keep it warm and exploratory - focus on the candidate background, design process, motivation, and how they think. Go light on deep technical detail.",
+  technical: "You are a senior engineer running a technical second-round interview. Be rigorous and probing - go deep on implementation, code reading, system design, and technical decision-making. Minimal small talk.",
+  final: "You are a hiring lead running a final-round interview. Focus on culture fit, team dynamics, scenario judgment, and decision-making. Keep it senior and holistic.",
+};
+
+const ROUND_LABELS = {
+  first: "1st Round (Conversational)",
+  technical: "2nd Round (Technical)",
+  final: "Final",
+};
+
 const state = {
   phase: "jd",
   questions: [],
@@ -12,7 +24,7 @@ const state = {
   cvFilename: null,
   coverLetterLoaded: false,
   coverLetterFilename: null,
-  interviewerPersona: "",
+  interviewerPersona: ROUND_PERSONA_PRESETS.first,
   // Simulation fields
   sessionType: "practice",
   interviewer: null,
@@ -183,7 +195,7 @@ function renderJdCard() {
 
       <div class="persona-row">
         <span class="mode-toggle-label">Interviewer Persona</span>
-        <textarea id="persona-input" class="persona-input" placeholder="Interviewer persona (optional) — e.g. 'Be an aggressive interviewer who focuses on system design' or 'Second round — background covered, go deep on technical skills'"></textarea>
+        <textarea id="persona-input" class="persona-input" data-action="updatePersona" placeholder="Interviewer persona (optional) - e.g. 'Be an aggressive interviewer who focuses on system design' or 'Second round - background covered, go deep on technical skills'">${escHtml(state.interviewerPersona)}</textarea>
       </div>
 
       <div class="mode-toggle-row">
@@ -220,8 +232,7 @@ function renderJdCard() {
 
       <div class="card-actions">
         <button class="btn primary" data-action="generate">Generate Questions</button>
-        <button class="btn secondary" data-action="startSimulation">Full Simulation</button>
-        <button class="btn danger" data-action="startIntense">Intense Simulation</button>
+        <button class="btn danger" data-action="startIntense">Full Simulation</button>
       </div>
       <div class="status" id="jd-status"></div>
     </div>
@@ -236,16 +247,6 @@ function renderJdCard() {
     textarea.addEventListener("input", () => {
       state.jobDescription = textarea.value;
       localStorage.setItem("interviewai_jd", textarea.value);
-    });
-  }
-
-  // Restore and save persona
-  const personaInput = document.getElementById("persona-input");
-  if (personaInput) {
-    if (state.interviewerPersona) personaInput.value = state.interviewerPersona;
-    personaInput.addEventListener("input", () => {
-      state.interviewerPersona = personaInput.value;
-      localStorage.setItem("interviewai_persona", personaInput.value);
     });
   }
 
@@ -1816,10 +1817,19 @@ const actions = {
 
   setRound: async (e) => {
     const round = e.target.closest("[data-round]")?.dataset.round;
-    if (!round || round === state.interviewRound) return;
-    if (!["first", "technical", "final"].includes(round)) return;
+    if (!round || !["first", "technical", "final"].includes(round)) return;
+    const current = state.interviewerPersona || "";
+    const untouched = current === "" || Object.values(ROUND_PERSONA_PRESETS).includes(current);
+    if (!untouched && !window.confirm("Replace your interviewer persona with the " + (ROUND_LABELS[round] || round) + " preset?")) return;
+    state.interviewerPersona = ROUND_PERSONA_PRESETS[round];
+    localStorage.setItem("interviewai_persona", state.interviewerPersona);
     state.interviewRound = round;
     render();
+  },
+
+  updatePersona: async (e) => {
+    state.interviewerPersona = e.target.value;
+    localStorage.setItem("interviewai_persona", state.interviewerPersona);
   },
 
   uploadCv: handleCvUpload,
@@ -1967,6 +1977,14 @@ document.getElementById("card-container").addEventListener("click", async e => {
 
 // Also handle checkbox change via delegation
 document.getElementById("card-container").addEventListener("change", async e => {
+  const target = e.target.closest("[data-action]");
+  if (!target) return;
+  const action = target.dataset.action;
+  if (actions[action]) await actions[action](e);
+});
+
+// Handle text input (persona textarea) via delegation
+document.getElementById("card-container").addEventListener("input", async e => {
   const target = e.target.closest("[data-action]");
   if (!target) return;
   const action = target.dataset.action;
