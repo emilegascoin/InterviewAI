@@ -26,6 +26,7 @@ const state = {
   intense: {
     sections: [],
     activeExchangeId: null,
+    usedTopicKeys: [],
   },
   recorder: { mediaRecorder: null, stream: null, chunks: [], timerInterval: null, seconds: 0 }
 };
@@ -992,6 +993,7 @@ function initIntenseSections() {
     status: 'pending',
     followUpCount: 0,
   }));
+  if (!Array.isArray(state.intense.usedTopicKeys)) state.intense.usedTopicKeys = [];
 }
 
 function buildConversationHistory() {
@@ -1118,9 +1120,9 @@ async function checkFollowUp(transcript, questionText, qIdx, sIdx, runId, exchan
   if (state.simulationRunId !== runId || state.intense.activeExchangeId !== exchangeId) return;
 
   const section = state.intense.sections[sIdx];
-  const followUpCount = section.followUpCount;
+  const followUpCount = (section.exchanges || []).filter(e => e.kind === 'follow_up').length;
 
-  if (kind === 'follow_up' || followUpCount >= 6 || section.id === 'closing') {
+  if (followUpCount >= 6 || section.id === 'closing') {
     devLog('Q' + (qIdx+1) + ' skipping follow-up check (kind=' + kind + ' followUpCount=' + followUpCount + ' section=' + section.id + ')', 'info');
     advanceIntense(qIdx, sIdx, runId);
     return;
@@ -1216,6 +1218,7 @@ async function advanceIntense(qIdx, sIdx, runId) {
   try {
     devLog('generating Q' + (nextQIdx+1) + ' via /generate-next-question...', 'api');
     const history = buildConversationHistory();
+    const usedTopicKeys = Array.isArray(state.intense.usedTopicKeys) ? [...state.intense.usedTopicKeys] : [];
     if (history.length > 0) {
       devLog('Full conversation history (' + history.length + ' exchange' + (history.length > 1 ? 's' : '') + '):\n' +
         history.map((ex, i) => '[Q' + (i+1) + '] ' + ex.question + '\n[A' + (i+1) + '] ' + ex.answer).join('\n\n'), 'info');
@@ -1231,10 +1234,15 @@ async function advanceIntense(qIdx, sIdx, runId) {
         use_cover_letter: state.coverLetterLoaded,
         interviewer_persona: state.interviewerPersona.trim() || null,
         conversation_history: history,
+        used_topic_keys: usedTopicKeys,
       })
     });
 
     if (state.simulationRunId !== runId) return;
+
+    if (data.topic_key && !state.intense.usedTopicKeys.includes(data.topic_key)) {
+      state.intense.usedTopicKeys.push(data.topic_key);
+    }
 
     const questions = [...state.questions];
     questions[nextQIdx] = {
@@ -1243,6 +1251,7 @@ async function advanceIntense(qIdx, sIdx, runId) {
       framing: data.framing,
       competency: data.competency,
       evaluationMode: data.evaluation_mode,
+      topicKey: data.topic_key,
     };
     state.questions = questions;
 
@@ -1791,6 +1800,7 @@ const actions = {
       questions: [],
       answers: []
     });
+    state.intense.usedTopicKeys = [];
 
     try {
       // Generate first question dynamically
@@ -1805,10 +1815,15 @@ const actions = {
           use_cover_letter: state.coverLetterLoaded,
           interviewer_persona: state.interviewerPersona.trim() || null,
           conversation_history: [],
+          used_topic_keys: state.intense.usedTopicKeys,
         })
       });
 
       if (state.simulationRunId !== runId) return;
+
+      if (data.topic_key && !state.intense.usedTopicKeys.includes(data.topic_key)) {
+        state.intense.usedTopicKeys.push(data.topic_key);
+      }
 
       // Pre-allocate 8 question slots; fill Q1 now
       state.questions = Array(8).fill(null);
@@ -1818,6 +1833,7 @@ const actions = {
         framing: data.framing,
         competency: data.competency,
         evaluationMode: data.evaluation_mode,
+        topicKey: data.topic_key,
       };
       state.analyses = Array(8).fill(null);
       state.interviewer = {};
@@ -1848,7 +1864,7 @@ const actions = {
       currentIndex: 0,
       simulationRunId: null,
       interviewer: {},
-      intense: { sections: [], activeExchangeId: null },
+      intense: { sections: [], activeExchangeId: null, usedTopicKeys: [] },
     });
   },
 

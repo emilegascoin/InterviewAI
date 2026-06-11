@@ -263,6 +263,7 @@ class NextQuestionRequest(BaseModel):
     use_cover_letter: bool = False
     interviewer_persona: str | None = None
     conversation_history: list = []
+    used_topic_keys: list[str] = []
 
 
 class SectionAnalyzeRequest(BaseModel):
@@ -338,6 +339,7 @@ async def generate_next_question_ep(req: NextQuestionRequest):
             cover_letter_summary=cover_letter_summary,
             interviewer_persona=req.interviewer_persona,
             conversation_history=req.conversation_history,
+            used_topic_keys=req.used_topic_keys,
         )
         return result
     except Exception as e:

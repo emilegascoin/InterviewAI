@@ -871,8 +871,19 @@ async def generate_next_question(
     cover_letter_summary: str | None = None,
     interviewer_persona: str | None = None,
     conversation_history: list | None = None,
+    used_topic_keys: list[str] | None = None,
 ) -> dict:
     """Generate a single interview question dynamically based on full conversation history."""
+
+    if question_number == total_questions:
+        return {
+            "phase": "closing",
+            "question": "Before we wrap up, do you have any questions for me about the role or team?",
+            "framing": "We have covered the main areas I wanted to discuss.",
+            "competency": "candidate_questions",
+            "evaluation_mode": "closing_question",
+            "_prompt": "",
+        }
 
     cv_block = ""
     if cv_summary:
@@ -894,6 +905,17 @@ async def generate_next_question(
             lines.append(f"A{i+1}: {ex.get('answer', '')}")
         history_block = "\n\nConversation so far:\n" + "\n".join(lines)
 
+    normalized_used_topic_keys = [
+        str(key).strip()
+        for key in (used_topic_keys or [])
+        if str(key).strip()
+    ]
+    topics_block = ""
+    if normalized_used_topic_keys:
+        topics_block = "\n\nTopics already covered (do not repeat):\n" + "\n".join(
+            f"- {key}" for key in normalized_used_topic_keys
+        )
+
     # Default phase guidance (overridden by persona if set)
     phase_map = {
         1: ("intro", "screening", "Ask a broad opener — 'walk me through your background' or 'tell me about yourself'. Do NOT ask about a specific skill or project."),
@@ -908,11 +930,12 @@ async def generate_next_question(
 
     phase, eval_mode, guidance = phase_map.get(question_number, ("behavioral", "star", "Ask a relevant follow-up question based on the conversation so far."))
 
-    prompt = f"""You are conducting a live job interview. Generate question {question_number} of {total_questions}.
+    def build_prompt(retry_instruction: str = "") -> str:
+        return f"""You are conducting a live job interview. Generate question {question_number} of {total_questions}.
 
 Job Description:
 {job_description.strip()}
-{cv_block}{cl_block}{history_block}
+{cv_block}{cl_block}{history_block}{topics_block}
 
 Default guidance for question {question_number}: {guidance}
 {persona_block}
@@ -921,6 +944,7 @@ Rules:
 - The framing is one conversational sentence the interviewer says before the question (reference something from the JD or conversation).
 - Do NOT ask about a topic already asked in the conversation above — move on regardless of how the candidate answered. Every question must introduce a new angle or subject.
 - If a cover letter summary is provided, at least one question across the interview must probe a specific claim from it.
+{retry_instruction}
 
 Return ONLY valid JSON. No markdown, no commentary. Use double quotes.
 {{
@@ -928,20 +952,34 @@ Return ONLY valid JSON. No markdown, no commentary. Use double quotes.
   "question": "The actual question text",
   "framing": "One conversational sentence before the question",
   "competency": "e.g. technical_depth / ownership / communication / motivation",
+  "topic_key": "short_snake_case_identifier_for_the_main_topic",
   "evaluation_mode": "{eval_mode if not interviewer_persona else 'screening|star|technical|closing_question — pick the most appropriate'}"
 }}"""
 
-    raw = await generate(prompt, json_mode=True)
-    start = raw.find("{")
-    end = raw.rfind("}") + 1
-    if start == -1 or end == 0:
-        raise ValueError("Model returned no valid JSON")
-    data = json.loads(raw[start:end])
+    async def generate_with_prompt(retry_instruction: str = "") -> tuple[dict, str]:
+        prompt = build_prompt(retry_instruction)
+        raw = await generate(prompt, json_mode=True)
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        if start == -1 or end == 0:
+            raise ValueError("Model returned no valid JSON")
+        return json.loads(raw[start:end]), prompt
+
+    data, prompt = await generate_with_prompt()
+
+    topic_key = str(data.get("topic_key", "")).strip()
+    if topic_key and topic_key in normalized_used_topic_keys:
+        retry_instruction = (
+            f'- Your previous question covered "{topic_key}" which was already asked. '
+            "Generate a question on a completely different topic."
+        )
+        data, prompt = await generate_with_prompt(retry_instruction)
 
     # Validate required keys
-    for key in ("phase", "question", "framing", "competency", "evaluation_mode"):
+    for key in ("phase", "question", "framing", "competency", "evaluation_mode", "topic_key"):
         if key not in data:
             raise ValueError(f"Missing key in response: {key}")
 
+    data["topic_key"] = str(data["topic_key"]).strip()
     data["_prompt"] = prompt
     return data
