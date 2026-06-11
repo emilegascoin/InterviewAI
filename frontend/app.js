@@ -1266,7 +1266,7 @@ async function advanceIntense(qIdx, sIdx, runId) {
     };
     state.questions = questions;
 
-    devLog('Q' + (nextQIdx+1) + ' generated\nFraming: ' + (data.framing||'') + '\nQuestion: ' + data.question + promptOnce('generate-next-question', data._prompt), 'result');
+    devLog('Q' + (nextQIdx+1) + ' generated (topic: ' + (data.topic_key||'?') + ')' + promptOnce('generate-next-question', data._prompt), 'result');
     deliverQuestion(nextQIdx, runId);
   } catch (e) {
     devLog('generate-next-question failed: ' + e.message, 'error');
