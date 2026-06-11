@@ -870,6 +870,7 @@ async def generate_next_question(
     cv_summary: str | None = None,
     cover_letter_summary: str | None = None,
     interviewer_persona: str | None = None,
+    interview_round: str = "first",
     conversation_history: list | None = None,
     used_topic_keys: list[str] | None = None,
 ) -> dict:
@@ -930,6 +931,28 @@ async def generate_next_question(
 
     phase, eval_mode, guidance = phase_map.get(question_number, ("behavioral", "star", "Ask a relevant follow-up question based on the conversation so far."))
 
+    round_key = interview_round if interview_round in ("first", "technical", "final") else "first"
+    round_style_map = {
+        "first": (
+            "Tone: warm, exploratory, conversational.\n"
+            "Emphasis: design process, portfolio walkthrough, motivation, and fit.\n"
+            "For technical-phase questions (Q6-Q7), ask about approach, judgment, how the candidate thinks, and how they debug. Do NOT ask deep syntax trivia."
+        ),
+        "technical": (
+            "Tone: rigorous and probing, with minimal small talk.\n"
+            "Emphasis: technical depth, code reading, implementation tradeoffs, and system design.\n"
+            "For technical-phase questions (Q6-Q7), go deeper on the candidate's technical choices and reasoning."
+        ),
+        "final": (
+            "Tone: senior and holistic.\n"
+            "Emphasis: culture fit, team dynamics, scenario judgment, decision-making, and how the candidate would work with the team."
+        ),
+    }
+    round_style_block = f"""
+Interview round style ({round_key}):
+- This changes tone and emphasis only. It must NOT change the phase order, question number mapping, or evaluation mode.
+{round_style_map[round_key]}"""
+
     def build_prompt(retry_instruction: str = "") -> str:
         return f"""You are conducting a live job interview. Generate question {question_number} of {total_questions}.
 
@@ -938,12 +961,16 @@ Job Description:
 {cv_block}{cl_block}{history_block}{topics_block}
 
 Default guidance for question {question_number}: {guidance}
+{round_style_block}
 {persona_block}
 Rules:
 - Make the question specific to this JD and candidate — not generic.
 - The framing is one conversational sentence the interviewer says before the question (reference something from the JD or conversation).
 - Do NOT ask about a topic already asked in the conversation above — move on regardless of how the candidate answered. Every question must introduce a new angle or subject.
 - If a cover letter summary is provided, at least one question across the interview must probe a specific claim from it.
+- Phrasing rule for all rounds: ban robotic corporate stems. Do NOT open questions with "Given your background in X...", "Can you walk me through a specific project where...", or similar corporate templates.
+- Keep the question short, natural, and focused on one idea. Avoid multi-clause run-on questions; put any needed context in the framing instead.
+- The question should sound like something a real interviewer would say out loud, for example "What is your favourite project you have worked on?" or "How do you usually approach a new design problem?"
 {retry_instruction}
 
 Return ONLY valid JSON. No markdown, no commentary. Use double quotes.

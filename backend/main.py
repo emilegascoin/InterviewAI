@@ -262,6 +262,7 @@ class NextQuestionRequest(BaseModel):
     use_cv: bool = False
     use_cover_letter: bool = False
     interviewer_persona: str | None = None
+    interview_round: str = "first"
     conversation_history: list = []
     used_topic_keys: list[str] = []
 
@@ -338,6 +339,7 @@ async def generate_next_question_ep(req: NextQuestionRequest):
             cv_summary=cv_summary,
             cover_letter_summary=cover_letter_summary,
             interviewer_persona=req.interviewer_persona,
+            interview_round=req.interview_round,
             conversation_history=req.conversation_history,
             used_topic_keys=req.used_topic_keys,
         )

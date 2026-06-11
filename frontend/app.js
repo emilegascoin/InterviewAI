@@ -6,6 +6,7 @@ const state = {
   currentIndex: 0,
   answers: [],
   interviewMode: "technical",
+  interviewRound: "first",
   useCv: false,
   cvLoaded: false,
   cvFilename: null,
@@ -175,6 +176,15 @@ function renderJdCard() {
       <div class="persona-row">
         <span class="mode-toggle-label">Interviewer Persona</span>
         <textarea id="persona-input" class="persona-input" placeholder="Interviewer persona (optional) — e.g. 'Be an aggressive interviewer who focuses on system design' or 'Second round — background covered, go deep on technical skills'"></textarea>
+      </div>
+
+      <div class="mode-toggle-row">
+        <span class="mode-toggle-label">Round</span>
+        <div class="mode-toggle" role="group" aria-label="Interview round">
+          <button class="mode-btn ${state.interviewRound === "first" ? "active" : ""}" data-action="setRound" data-round="first" type="button">1st Round (Conversational)</button>
+          <button class="mode-btn ${state.interviewRound === "technical" ? "active" : ""}" data-action="setRound" data-round="technical" type="button">2nd Round (Technical)</button>
+          <button class="mode-btn ${state.interviewRound === "final" ? "active" : ""}" data-action="setRound" data-round="final" type="button">Final</button>
+        </div>
       </div>
 
       <div class="cv-row">
@@ -1233,6 +1243,7 @@ async function advanceIntense(qIdx, sIdx, runId) {
         use_cv: state.useCv && state.cvLoaded,
         use_cover_letter: state.coverLetterLoaded,
         interviewer_persona: state.interviewerPersona.trim() || null,
+        interview_round: state.interviewRound,
         conversation_history: history,
         used_topic_keys: usedTopicKeys,
       })
@@ -1780,6 +1791,14 @@ const actions = {
     await saveSettings();
   },
 
+  setRound: async (e) => {
+    const round = e.target.closest("[data-round]")?.dataset.round;
+    if (!round || round === state.interviewRound) return;
+    if (!["first", "technical", "final"].includes(round)) return;
+    state.interviewRound = round;
+    render();
+  },
+
   uploadCv: handleCvUpload,
 
   startIntense: async () => {
@@ -1814,6 +1833,7 @@ const actions = {
           use_cv: state.useCv && state.cvLoaded,
           use_cover_letter: state.coverLetterLoaded,
           interviewer_persona: state.interviewerPersona.trim() || null,
+          interview_round: state.interviewRound,
           conversation_history: [],
           used_topic_keys: state.intense.usedTopicKeys,
         })
@@ -1862,6 +1882,7 @@ const actions = {
       answers: [],
       analyses: [],
       currentIndex: 0,
+      interviewRound: "first",
       simulationRunId: null,
       interviewer: {},
       intense: { sections: [], activeExchangeId: null, usedTopicKeys: [] },
