@@ -33,7 +33,22 @@ DEFAULT_SETTINGS = {
 }
 
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
-app.mount("/static", StaticFiles(directory=frontend_path), name="static")
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """Serve static assets with revalidation so edits show up without a hard refresh.
+
+    This is a local-only dev tool, so always-revalidate is the right tradeoff —
+    it removes any reliance on ?v= cache-busters staying in sync.
+    """
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
+
+
+app.mount("/static", NoCacheStaticFiles(directory=frontend_path), name="static")
 
 BUILD_INFO = {
     "simulation_normalizer": True,
@@ -63,7 +78,10 @@ def save_settings(settings: dict):
 # ── Root ────────────────────────────────────────────────────────────────────
 @app.get("/")
 def root():
-    return FileResponse(os.path.join(frontend_path, "index.html"))
+    return FileResponse(
+        os.path.join(frontend_path, "index.html"),
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
 
 
 @app.get("/health")
