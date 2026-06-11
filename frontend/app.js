@@ -1156,10 +1156,6 @@ async function checkFollowUp(transcript, questionText, qIdx, sIdx, runId, exchan
       answer: ex.answer,
     }));
 
-    const _exchLog = [...conversation, { question: questionText, answer: transcript }];
-    devLog('Follow-up context (' + _exchLog.length + ' exchange' + (_exchLog.length > 1 ? 's' : '') + ' in section):\n' +
-      _exchLog.map((ex, i) => '[Q' + (i+1) + '] ' + ex.question + '\n[A' + (i+1) + '] ' + ex.answer).join('\n\n'), 'info');
-
     const data = await requestJson(API + '/follow-up-check', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1237,10 +1233,6 @@ async function advanceIntense(qIdx, sIdx, runId) {
     devLog('generating Q' + (nextQIdx+1) + ' via /generate-next-question...', 'api');
     const history = buildConversationHistory();
     const usedTopicKeys = Array.isArray(state.intense.usedTopicKeys) ? [...state.intense.usedTopicKeys] : [];
-    if (history.length > 0) {
-      devLog('Full conversation history (' + history.length + ' exchange' + (history.length > 1 ? 's' : '') + '):\n' +
-        history.map((ex, i) => '[Q' + (i+1) + '] ' + ex.question + '\n[A' + (i+1) + '] ' + ex.answer).join('\n\n'), 'info');
-    }
     const data = await requestJson(`${API}/generate-next-question`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

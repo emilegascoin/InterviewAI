@@ -535,10 +535,10 @@ header h1 {
 .card-back-btn:hover { background: var(--border); color: var(--text); }
 @media print { .card-back-btn { display: none !important; } }
 
-/* Clear the back arrow so card titles don't overlap it */
-.card-back-btn ~ h1,
-.card-back-btn ~ h2,
-.card-back-btn ~ h3 { padding-left: 34px; }
+/* Clear the back arrow so the first card element (title) doesn't overlap it.
+   Uses the adjacent-sibling selector so it matches whatever tag the title is
+   — h2 on most cards, div.intense-interviewer on the intense card. */
+.card-back-btn + * { padding-left: 38px; }
 
 .card h2 {
   font-size: 1rem;
